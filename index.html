@@ -1,1 +1,770 @@
-<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="refresh" content="0; url=https://operators-till-substances-pics.trycloudflare.com"><title>Redirect</title><script>window.location.href = "https://operators-till-substances-pics.trycloudflare.com";</script></head><body>転送中...<a href="https://operators-till-substances-pics.trycloudflare.com">Click here</a></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Calgary YYC 3D Radar - Terminal Control Area Version</title>
+  <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
+    body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: sans-serif; }
+    #map {
+      width: 100vw;
+      width: 100dvw;
+      height: 100vh;
+      height: 100dvh;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    
+    #control-panel {
+      position: absolute; 
+      top: 40px;
+      left: 15px; 
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.85); border-radius: 8px;
+      color: #fff; width: 240px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      overflow: hidden; 
+    }
+
+    .panel-header {
+      padding: 10px 15px;
+      background: rgba(40, 40, 40, 0.9);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #333;
+    }
+    .panel-header:hover { background: #444; }
+    
+    .panel-content { 
+      padding: 15px; 
+      max-height: 700px; 
+      transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), padding 0.4s;
+    }
+
+    #control-panel.collapsed .panel-content {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border: none;
+    }
+
+    .toggle-icon { transition: transform 0.4s; font-size: 11px; color: #0076ff; }
+    #control-panel.collapsed .toggle-icon { transform: rotate(180deg); }
+
+    .panel-section { margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 2px; }
+    .btn-group { display: flex; gap: 3px; width: 100%; flex-wrap: wrap; }
+    .btn {
+      flex: 1; background: #333; color: #fff; border: none; padding: 6px 0;
+      border-radius: 4px; cursor: pointer; font-size: 11px; transition: 0.2s;
+      text-align: center; min-width: 55px;
+    }
+    .btn.active { background: #0076ff; font-weight: bold; }
+    .btn.mode-btn { background: #444; font-size: 12px; padding: 8px 0; }
+    .btn.mode-btn.active { background: #28a745; }
+    input[type=range] { width: 100%; cursor: pointer; }
+
+    .control-btn {
+      position: absolute; 
+      right: 20px; 
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.3); color: #0076ff; border: 1px solid #0076ff;
+      padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 11.5px; font-weight: bold;
+      box-shadow: 0 0 10px rgba(0, 118, 255, 0.3); transition: all 0.2s;
+      width: 90px; 
+      text-align: center;
+    }
+    .control-btn:hover { background: #0076ff; color: #fff; box-shadow: 0 0 15px rgba(0, 118, 255, 0.3); }
+    .control-btn:active { transform: scale(0.95); }
+
+    #compass-btn { top: 40px; }
+    #topview-btn { top: 95px; }
+    
+    #yyc-btn { top: 150px; }
+    #yyc-btn.active {
+      background: #0076ff;
+      color: #fff;
+      box-shadow: 0 0 15px rgba(0, 118, 255, 0.8);
+    }
+
+    .control-btn:active, #yyc-btn:active {
+      background: #ff00ff !important;         
+      border-color: #ff00ff !important;
+      color: #000000 !important;             
+      box-shadow: 0 0 15px #ff00ff !important; 
+      transition: none !important;           
+    }
+
+    #detail-panel {
+      position: absolute; 
+      top: 210px; 
+      right: 20px; 
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.75); border-radius: 8px;
+      color: #fff; 
+      width: 220px; 
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      border: 1px solid rgba(0, 118, 255, 0.3); display: none; 
+    }
+    .detail-header {
+      padding: 8px 12px; background: rgba(0, 118, 255, 0.2);
+      font-size: 11.5px; font-weight: bold; letter-spacing: 0.5px;
+      border-bottom: 1px solid rgba(0, 118, 255, 0.4); display: flex; justify-content: space-between;
+    }
+    .detail-close { cursor: pointer; color: #aaa; }
+    .detail-close:hover { color: #fff; }
+    .detail-content { padding: 12px; font-family: monospace; font-size: 11.5px; }
+    .detail-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+    .detail-label { color: #ffffff; }
+    .detail-value { color: #00ffc4; font-weight: bold; }
+    
+    .status-active { color: #00ff66 !important; }
+    .status-lost { color: #ff3344 !important; }
+
+    .notes-section {
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: 6px;
+      overflow: hidden;
+      border-left: 3px solid #ffb000;
+      margin-top: 5px;
+    }
+    
+    .notes-title {
+      font-size: 11px;
+      font-weight: bold;
+      color: #ffb000;
+      padding: 6px 10px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      background: rgba(255, 176, 0, 0.05);
+    }
+    .notes-title:hover {
+      background: rgba(255, 176, 0, 0.15);
+    }
+    
+    .notes-arrow {
+      font-size: 9px;
+      transition: transform 0.3s;
+      color: #ffb000;
+    }
+    
+    .notes-section.expanded .notes-arrow {
+      transform: rotate(180deg);
+    }
+
+    .notes-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s cubic-bezier(0.25, 1, 0.5, 1), padding 0.3s;
+      padding: 0 10px;
+    }
+    
+    .notes-section.expanded .notes-body {
+      max-height: 250px; 
+      padding: 8px 10px 10px 10px;
+    }
+
+    .notes-list {
+      margin: 0;
+      padding-left: 12px;
+      font-size: 10.5px;
+      color: #ccc;
+      line-height: 1.4;
+    }
+    .notes-list li {
+      margin-bottom: 5px;
+    }
+    .notes-list li:last-child {
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <button id="compass-btn" class="control-btn" onclick="resetToNorth()">北を上に</button>
+  <button id="topview-btn" class="control-btn" onclick="setViewToTop()">真上から</button>
+  <button id="yyc-btn" class="control-btn" onclick="toggleYycLock()">YYC</button>
+
+  <div id="detail-panel">
+    <div class="detail-header">
+      <span>✈️ AIRCRAFT INFO</span>
+      <span class="detail-close" onclick="closeDetailPanel()">✖</span>
+    </div>
+    <div class="detail-content">
+      <div class="detail-row"><span class="detail-label">Status:</span><span id="det-status" class="detail-value">-</span></div>
+      <div class="detail-row"><span class="detail-label">ICAO Hex:</span><span id="det-hex" class="detail-value">-</span></div>
+      <div class="detail-row"><span class="detail-label">Callsign:</span><span id="det-callsign" class="detail-value" style="color:#fff;">-</span></div>
+      <div class="detail-row"><span class="detail-label">Airline:</span><span id="det-airline" class="detail-value" style="color:#ffb000;">-</span></div>
+      <div class="detail-row"><span class="detail-label">Model:</span><span id="det-model" class="detail-value" style="color:#00d2ff;">-</span></div>
+      <div class="detail-row"><span class="detail-label">Reg:</span><span id="det-reg" class="detail-value" style="color:#ffffff;">-</span></div>
+      <hr style="border:0; border-top:1px solid #333; margin:10px 0;">
+      <div class="detail-row"><span class="detail-label">Altitude:</span><span id="det-alt" class="detail-value">-</span></div>
+      <div class="detail-row"><span class="detail-label">Speed:</span><span id="det-speed" class="detail-value">-</span></div>
+      <div class="detail-row"><span class="detail-label">Heading:</span><span id="det-track" class="detail-value">-</span></div>
+      <div class="detail-row"><span class="detail-label">Vert Rate:</span><span id="det-vrate" class="detail-value">-</span></div>
+    </div>
+  </div>
+
+  <div id="control-panel">
+    <div class="panel-header" onclick="togglePanel()">
+      <span>📡 RADAR CONTROL</span>
+      <span id="toggle-btn" class="toggle-icon">▲</span>
+    </div>
+    
+    <div class="panel-content">
+      <div class="panel-section">
+        <label>⏰ タイムスパン</label>
+        <div class="btn-group">
+          <button id="btn-15m" class="btn" onclick="setTimespan(0.25)">15min</button>
+          <button id="btn-1h" class="btn" onclick="setTimespan(1)">1h</button>
+          <button id="btn-3h" class="btn" onclick="setTimespan(3)">3h</button>
+          <button id="btn-6h" class="btn" onclick="setTimespan(6)">6h</button>
+          <button id="btn-12h" class="btn" onclick="setTimespan(12)">12h</button>
+          <button id="btn-24h" class="btn" onclick="setTimespan(24)">24h</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <label>📐 線の太さ: <span id="width-val">1</span></label>
+        <input type="range" id="width-slider" min="1" max="5" step="1" value="1" oninput="updateLineWidth(this.value)">
+      </div>
+      
+      <div class="panel-section">
+        <label>🌐 管制圏の表示: <span id="airspace-opacity-val">0</span>%</label>
+        <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="0" oninput="updateAirspaceOpacity(this.value)">
+      </div>
+      
+      <div class="panel-section">
+        <label>⛰️ 高度の強調: <span id="exag-val">4</span>倍</label>
+        <input type="range" id="exag-slider" min="0" max="8" step="1" value="4" oninput="updateExaggeration(this.value)">
+      </div>
+
+      <div class="panel-section">
+        <label>🗺️ 地図スタイル</label>
+        <div class="btn-group">
+          <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Cyber</button>
+          <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Backdrop</button>
+          <button id="style-satellite" class="btn" onclick="switchMapStyle('satellite')">Satellite</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <label>💻 データ取得方法</label>
+        <div class="btn-group">
+          <button id="mode-pc" class="btn mode-btn" onclick="switchDeviceMode('pc')">全取得</button>
+          <button id="mode-mobile" class="btn mode-btn" onclick="switchDeviceMode('mobile')">都度取得</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div id="notes-accordion" class="notes-section">
+          <div class="notes-title" onclick="toggleNotes()">
+            <span>⚠️ 使用上の注意</span>
+            <span class="notes-arrow">▼</span>
+          </div>
+          <div class="notes-body">
+            <ul class="notes-list">
+              <li>線の太さを細くすると、マップ上での機体（航跡）の選択・タップが難しくなります。</li>
+              <li>「都度取得（モバイル推奨）」はボタン切替の度にデータを再読み込みするため、長時間に設定すると端末の負荷が大きくなります。</li>
+              <li>低スペック端末での「全取得」や、長時間のタイムスパン選択は動作が重くなる場合があります。</li>
+              <li>ブラウザをバックグラウンドにすると、リアルタイム更新が一時停止する場合があります。</li>
+              <li>リアルタイムのデータですが、数秒〜数十秒の遅延が発生する場合があります。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    const YYC_CENTER = [-114.0078, 51.1139];
+    const MAPTILER_KEY = 'DoG1rwzHjdAwMa5azhsZ'; 
+    let EXAGGERATION_FACTOR = 4.0;
+    let AIRSPACE_OPACITY = 0.0; 
+
+    const CURRENT_HOST = window.location.host; 
+
+    const STYLES = {
+      cyber: `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${MAPTILER_KEY}`,
+      backdrop: `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`,
+      satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`
+    };
+
+    let currentStyleName = 'backdrop'; 
+    
+    // 📱 【iPhone・スマホ検出ロジック】
+    const isIPhoneDevice = /iPhone|iPod|iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    let deviceMode = (window.innerWidth < 768 || isIPhoneDevice) ? 'mobile' : 'pc';
+    let currentLineWidth = 3; 
+    
+    // 💡 iPhoneの場合は初期表示を負荷の最も低い「15分」に設定、PCは「1時間」
+    let currentTimespanHours = isIPhoneDevice ? 0.25 : 1;
+    
+    let flightPaths = {};
+    let selectedAircraftId = null; 
+
+    let BACKEND_URL = "";
+    let ws = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const widthSlider = document.getElementById('width-slider');
+      const widthVal = document.getElementById('width-val');
+      if (widthSlider && widthVal) {
+        widthSlider.value = currentLineWidth;
+        widthVal.innerText = currentLineWidth;
+      }
+      
+      // UIのボタンの「active」状態を初期タイムスパンに合わせて同期
+      const initialSpanBtnId = isIPhoneDevice ? 'btn-15m' : 'btn-1h';
+      document.getElementById(initialSpanBtnId).classList.add('active');
+    });
+
+    function togglePanel() {
+      const panel = document.getElementById('control-panel');
+      panel.classList.toggle('collapsed');
+    }
+
+    function toggleNotes() {
+      const notesEl = document.getElementById('notes-accordion');
+      notesEl.classList.toggle('expanded');
+    }
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: STYLES[currentStyleName],
+      center: YYC_CENTER, 
+      zoom: isIPhoneDevice ? 9 : 8, // iPhoneは少し寄った状態で開始して初期負荷軽減          
+      bearing: 0,       
+      pitch: 0,           
+      maxPitch: 85,
+      cooperativeGestures: false
+    });
+
+    function toggleYycLock() {
+      map.easeTo({
+        center: YYC_CENTER,
+        duration: 800,
+        cubicBezier: [0.25, 1, 0.5, 1],
+        essential: true
+      });
+    }
+
+    function applyStyleSettings() {
+      if (!map.getSource('maptiler-terrain')) {
+        map.addSource('maptiler-terrain', {
+          type: 'raster-dem',
+          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
+          tileSize: 256
+        });
+      }
+      map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
+    }
+
+    async function initializeConnection() {
+      try {
+        const response = await fetch('url.json');
+        const data = await response.json();
+        
+        if (data && data.backend_url) {
+          BACKEND_URL = data.backend_url;
+          console.log("🌐 接続先URLを自動取得しました:", BACKEND_URL);
+        } else {
+          throw new Error("jsonの中身が不正です");
+        }
+      } catch (e) {
+        console.warn("⚠️ url.json の読み込みに失敗しました。localhostで接続します:", e);
+        BACKEND_URL = "http://localhost:8056";
+      }
+
+      loadHistoricalData();
+      connectWebSocket();
+    }
+
+    map.on('load', () => {
+      applyStyleSettings();
+      document.getElementById('mode-pc').classList.toggle('active', deviceMode === 'pc');
+      document.getElementById('mode-mobile').classList.toggle('active', deviceMode === 'mobile');
+      
+      initializeConnection();
+
+      // 🎬 iPhone以外の強力な端末のときだけ派手なオープニング自動アニメーションを実行
+      if (!isIPhoneDevice) {
+        setTimeout(() => {
+          map.flyTo({
+            center: YYC_CENTER, 
+            zoom: 11,          
+            pitch: 80,          
+            bearing: 210,        
+            duration: 4000,     
+            essential: true
+          });
+        }, 5000); 
+      }
+    });
+
+    function switchMapStyle(styleName) {
+      if (currentStyleName === styleName) return;
+      currentStyleName = styleName;
+      ['cyber', 'backdrop', 'satellite'].forEach(name => {
+        document.getElementById(`style-${name}`).classList.toggle('active', name === styleName);
+      });
+      map.setStyle(STYLES[styleName]);
+      map.once('styledata', () => {
+        applyStyleSettings();
+      });
+    }
+
+    const deckOverlay = new deck.MapboxOverlay({ 
+      layers: [],
+      onClick: (info) => {
+        if (!info.object) { closeDetailPanel(); }
+      }
+    });
+    map.addControl(deckOverlay);
+
+    function getColorByAltitude(rawAlt) {
+      let currentMinAlt = 0; 
+      let currentMaxAlt = 9000; 
+      const ratio = Math.min(Math.max((rawAlt - currentMinAlt) / (currentMaxAlt - currentMinAlt), 0), 1);
+      return [
+        Math.round(255 * (1 - ratio)),
+        Math.round(200 * (1 - Math.abs(ratio - 0.5) * 2)),
+        Math.round(255 * ratio),
+        224
+      ];
+    }
+
+    function generateAirspaceCircle(center, radiusMeters, rawElevation, pointsCount = 64) {
+      const coordinates = [];
+      const km = radiusMeters / 1000;
+      const latFactor = km / 111.32;
+      const lonFactor = km / (40075 * Math.cos(center[1] * Math.PI / 180) / 360);
+
+      for (let i = 0; i < pointsCount; i++) {
+        const angle = (i / pointsCount) * Math.PI * 2;
+        const lon = center[0] + Math.cos(angle) * lonFactor;
+        const lat = center[1] + Math.sin(angle) * latFactor;
+        coordinates.push([lon, lat, rawElevation]);
+      }
+      coordinates.push([coordinates[0][0], coordinates[0][1], rawElevation]); 
+      return coordinates;
+    }
+
+    const YYC_CONTROL_ZONE = [
+      { name: "Control Zone", radius: 12964, rawElevation: 1084, rawCeiling: 928, color: [0, 118, 255] },
+      { name: "TCA Inner", radius: 27780, rawElevation: 1463, rawCeiling: 4023, color: [230, 50, 50] },
+      { name: "TCA Middle", radius: 37040, rawElevation: 1676, rawCeiling: 3810, color: [230, 120, 50] },
+      { name: "TCA Outer", radius: 55560, rawElevation: 2438, rawCeiling: 3048, color: [230, 200, 50] }
+    ];
+
+    async function loadHistoricalData() {
+      if (!BACKEND_URL) return; 
+      const fetchHours = (deviceMode === 'pc') ? 24 : currentTimespanHours;
+      try {
+        console.log(`⏳ Loading ${fetchHours} hours of history from server...`);
+        const response = await fetch(`${BACKEND_URL}/api/history?hours=${fetchHours}`);
+        const data = await response.json();
+        
+        flightPaths = {};
+        data.forEach(msg => {
+          processIncomingMessage(msg);
+        });
+        console.log(`✅ History loaded. Total unique aircrafts: ${Object.keys(flightPaths).length}`);
+      } catch (e) {
+        console.error("❌ Failed to load historical data:", e);
+      }
+    }
+
+    function processIncomingMessage(msg) {
+      // 📱 安全ガード：座標や高度が不正（NaNなど）な不正値を徹底排除してSafariのクラッシュを防ぐ
+      if (msg.lat === undefined || msg.lon === undefined || msg.alt === undefined || isNaN(msg.lat) || isNaN(msg.lon) || isNaN(msg.alt)) {
+        return; 
+      }
+
+      if (!flightPaths[msg.id]) {
+        flightPaths[msg.id] = {
+          id: msg.id,
+          callsign: 'UNKNOWN',
+          airline: 'UNKNOWN',
+          model: 'UNKNOWN',
+          registration: '---',
+          speed: '---',
+          track: '---',
+          v_rate: '---',
+          segments: [[]] 
+        };
+      }
+
+      const aircraft = flightPaths[msg.id];
+
+      if (msg.airline) aircraft.airline = msg.airline;
+      if (msg.model) aircraft.model = msg.model;
+      if (msg.registration) aircraft.registration = msg.registration;
+      if (msg.callsign) aircraft.callsign = msg.callsign;
+      if (msg.speed !== undefined) aircraft.speed = Math.round(msg.speed) + " kt";
+      if (msg.track !== undefined) aircraft.track = Math.round(msg.track) + "°";
+      if (msg.v_rate !== undefined) {
+        aircraft.v_rate = (msg.v_rate > 0 ? "+" : "") + msg.v_rate + " ft/min";
+      }
+
+      let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
+      const newCoord = [msg.lon, msg.lat, adjustedAlt];
+
+      let currentSegment = aircraft.segments[aircraft.segments.length - 1];
+      
+      if (currentSegment.length === 0) {
+        currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: msg.ts });
+      } else {
+        const lastPoint = currentSegment[currentSegment.length - 1];
+        
+        if ((msg.ts - lastPoint.time) > 1800 * 1000) {
+          aircraft.segments.push([{ pos: newCoord, rawAlt: msg.alt, time: msg.ts }]);
+        } else {
+          if (lastPoint.pos[0] !== msg.lon || lastPoint.pos[1] !== msg.lat) {
+            currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: msg.ts });
+          }
+        }
+      }
+
+      if (selectedAircraftId === msg.id) {
+        updateDetailPanel(msg.id);
+      }
+    }
+
+    function connectWebSocket() {
+      if (!BACKEND_URL) return;
+      
+      const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss://' : 'ws://';
+      const wsHost = BACKEND_URL.replace(/^https?:\/\//, '');
+      const wsUrl = `${wsProtocol}${wsHost}/ws`;
+
+      console.log(`📡 [WebSocket] 接続を開始します: ${wsUrl}`);
+      ws = new WebSocket(wsUrl);
+      
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        processIncomingMessage(msg);
+      };
+
+      ws.onerror = (error) => {
+        console.error("❌ [WebSocket] エラーが発生しました:", error);
+      };
+
+      ws.onclose = () => {
+        console.warn("⚠️ [WebSocket] 接続が切断されました。5秒後に再接続を試みます...");
+        setTimeout(connectWebSocket, 5000);
+      };
+    }
+
+    // 🛠️ 描画更新処理を関数として独立化
+    function renderRadarLayers() {
+      const now = Date.now();
+      const filterHours = (deviceMode === 'pc') ? currentTimespanHours : 24; 
+      const timeLimitIdx = filterHours * 60 * 60 * 1000; 
+
+      let activeSegmentsArray = [];
+
+      for (const id in flightPaths) {
+        const aircraft = flightPaths[id];
+        
+        aircraft.segments = aircraft.segments.map(segment => {
+          return segment.filter(pt => (now - pt.time) < (24 * 60 * 60 * 1000));
+        }).filter(segment => segment.length > 0); 
+
+        aircraft.segments.forEach(segment => {
+          const hasValidPoints = segment.some(pt => (now - pt.time) < timeLimitIdx);
+          if (hasValidPoints && segment.length > 1) {
+            activeSegmentsArray.push({
+              id: aircraft.id, 
+              points: segment
+            });
+          }
+        });
+      }
+
+      const airspaceLayer = new deck.PolygonLayer({
+        id: 'yyc-airspace-layer',
+        data: YYC_CONTROL_ZONE,
+        getPolygon: d => generateAirspaceCircle(YYC_CENTER, d.radius, d.rawElevation * EXAGGERATION_FACTOR),
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: true,                                    
+        getElevation: d => d.rawCeiling * EXAGGERATION_FACTOR, 
+        getFillColor: d => [...d.color, Math.round(AIRSPACE_OPACITY * 255)],          
+        getLineColor: d => [...d.color, Math.round(AIRSPACE_OPACITY * 1.5 * 255)],         
+        getLineWidth: 2,
+        lineWidthMinPixels: 1,
+        wireframe: true,                                  
+        pickable: false,
+        _lighting: 'flat', 
+        parameters: { depthTest: true, blend: true, cull: false },
+        updateTriggers: {
+          getPolygon: [EXAGGERATION_FACTOR],     
+          getElevation: [EXAGGERATION_FACTOR],
+          getFillColor: [AIRSPACE_OPACITY], 
+          getLineColor: [AIRSPACE_OPACITY]
+        }
+      });
+
+      const pathLayer = new deck.PathLayer({
+        id: 'flight-paths-layer',
+        data: activeSegmentsArray, 
+        getPath: d => d.points.map(pt => pt.pos), 
+        getColor: d => d.points.map(pt => getColorByAltitude(pt.rawAlt)), 
+        widthUnits: 'pixels',     
+        getWidth: d => d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2.0) : ((currentLineWidth - 0.3) * 1.0), 
+        widthMinPixels: 0.1,      
+        rounded: true,
+        pickable: true, 
+        pickRadius: isIPhoneDevice ? 40 : 30, // iPhoneはタップしづらいので判定を広めに調整
+        parameters: { depthTest: false, depthMask: false },
+        onClick: info => {
+          if (info.object) {
+            selectedAircraftId = info.object.id; 
+            updateDetailPanel(info.object.id);   
+          }
+        },
+        extensions: [new deck.PathStyleExtension({ highPrecisionDash: true })],
+        getDashArray: [0, 0], 
+        billboard: true,      
+        miterLimit: 2,
+        updateTriggers: {
+          getPath: [activeSegmentsArray, currentTimespanHours],
+          getColor: [activeSegmentsArray, currentTimespanHours],
+          getWidth: [selectedAircraftId, currentLineWidth]
+        }
+      });
+
+      deckOverlay.setProps({ layers: [pathLayer, airspaceLayer] });
+    }
+
+    // ⏰ 【デバイス別の動的リフレッシュレート調整】
+    // PC/Macは「1秒に1回」超高精度で更新。iPhoneは「3秒に1回」に落としてメモリのパンクを絶対に防ぐ。
+    const refreshInterval = isIPhoneDevice ? 3000 : 1000;
+    setInterval(renderRadarLayers, refreshInterval);
+
+    function switchDeviceMode(mode) {
+      deviceMode = mode;
+      document.getElementById('mode-pc').classList.toggle('active', mode === 'pc');
+      document.getElementById('mode-mobile').classList.toggle('active', mode === 'mobile');
+      loadHistoricalData();
+    }
+
+    function setTimespan(hours) {
+      currentTimespanHours = hours;
+      const hourList = ['15m', '1h', '3h', '6h', '12h', '24h'];
+      
+      hourList.forEach(h => {
+        const btn = document.getElementById(`btn-${h}`);
+        if (btn) {
+          let isMatch = false;
+          if (h === '15m')  isMatch = (hours === 0.25);
+          if (h === '1h')   isMatch = (hours === 1);
+          if (h === '3h')   isMatch = (hours === 3);
+          if (h === '6h')   isMatch = (hours === 6);
+          if (h === '12h')  isMatch = (hours === 12);
+          if (h === '24h')  isMatch = (hours === 24);
+          btn.classList.toggle('active', isMatch);
+        }
+      });
+
+      if (deviceMode === 'mobile') { loadHistoricalData(); }
+    }
+
+    function updateLineWidth(val) {
+      currentLineWidth = parseFloat(val);
+      document.getElementById('width-val').innerText = val;
+    }
+
+    function updateExaggeration(val) {
+      EXAGGERATION_FACTOR = parseInt(val);
+      document.getElementById('exag-val').innerText = val;
+
+      if (map.getSource('maptiler-terrain')) {
+        map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
+      }
+
+      for (const id in flightPaths) {
+        if (flightPaths[id].segments) {
+          flightPaths[id].segments.forEach(segment => {
+            segment.forEach(pt => {
+              pt.pos[2] = pt.rawAlt * EXAGGERATION_FACTOR;
+            });
+          });
+        }
+      }
+    }
+
+    function updateAirspaceOpacity(val) {
+      AIRSPACE_OPACITY = parseInt(val) / 100; 
+      document.getElementById('airspace-opacity-val').innerText = val;
+    }
+
+    function resetToNorth() {
+      const currentZoom = map.getZoom();
+      const currentPitch = map.getPitch();
+      map.easeTo({ bearing: 0, pitch: currentPitch, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+    }
+
+    function setViewToTop() {
+      const currentZoom = map.getZoom();
+      const currentBearing = map.getBearing();
+      map.easeTo({ pitch: 0, bearing: currentBearing, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+    }
+
+    function updateDetailPanel(hexId) {
+      const aircraft = flightPaths[hexId];
+      if (!aircraft) return;
+
+      document.getElementById('det-hex').innerText = hexId.toUpperCase();
+      document.getElementById('det-callsign').innerText = aircraft.callsign;
+      document.getElementById('det-airline').innerText = aircraft.airline;
+      document.getElementById('det-model').innerText = aircraft.model;
+      document.getElementById('det-reg').innerText = aircraft.registration;
+      
+      const segments = aircraft.segments;
+      const lastSegment = segments && segments.length > 0 ? segments[segments.length - 1] : null;
+      
+      if (lastSegment && lastSegment.length > 0) {
+        const lastPt = lastSegment[lastSegment.length - 1];
+        
+        const altFt = Math.round(lastPt.rawAlt / 0.3048); 
+        document.getElementById('det-alt').innerText = altFt.toLocaleString() + " ft";
+        
+        const isLost = (Date.now() - lastPt.time) > 30000;
+        const statusEl = document.getElementById('det-status');
+        
+        statusEl.innerText = isLost ? "🚨 LOST CONTACT" : "🟢 ACTIVE";
+        statusEl.className = isLost ? "detail-value status-lost" : "detail-value status-active";
+      } else {
+        document.getElementById('det-alt').innerText = "---";
+      }
+
+      document.getElementById('det-speed').innerText = aircraft.speed;
+      document.getElementById('det-track').innerText = aircraft.track;
+      document.getElementById('det-vrate').innerText = aircraft.v_rate;
+
+      document.getElementById('detail-panel').style.display = 'block';
+    }
+
+    function closeDetailPanel() {
+      selectedAircraftId = null; 
+      document.getElementById('detail-panel').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
