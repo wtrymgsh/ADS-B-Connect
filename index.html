@@ -293,7 +293,7 @@
   <script>
     const YYC_CENTER = [-114.0078, 51.1139];
     const MAPTILER_KEY = 'DoG1rwzHjdAwMa5azhsZ'; 
-    let EXAGGERATION_FACTOR = 4.0;
+    let EXAGGERATION_FACTOR = isIPhone ? 0.0 : 4.0;
     let AIRSPACE_OPACITY = 0.0; 
 
     const CURRENT_HOST = window.location.host; 
@@ -350,9 +350,9 @@
       container: 'map',
       style: STYLES[currentStyleName],
       center: YYC_CENTER, 
-      zoom: isIPhone ? 9.2 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
+      zoom: isIPhone ? 9 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
       bearing: 0,       
-      pitch: isIPhone ? 0 : 45, // ★iPhoneなら完全2D(真上)固定！iPadやPCは立体的な45度(3D)で開始！          
+      pitch: isIPhone ? 0 : 0, // ★iPhoneなら完全2D(真上)固定！iPadやPCは立体的な45度(3D)で開始！          
       maxPitch: 85,
       cooperativeGestures: false
     });
@@ -409,8 +409,8 @@
         setTimeout(() => {
           map.flyTo({
             center: YYC_CENTER, 
-            zoom: 10.5,          
-            pitch: 65,          
+            zoom: 11,          
+            pitch: 80,          
             bearing: 210,        
             duration: 4000,     
             essential: true
