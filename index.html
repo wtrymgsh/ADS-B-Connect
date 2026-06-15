@@ -583,13 +583,24 @@
 
       let activeSegmentsArray = [];
 
+      // ★iPhoneならタイムスパン（15分など）、iPad/PCなら最大24時間でメモリをクリアする
+      const memoryLimitMs = isIPhone ? (currentTimespanHours * 60 * 60 * 1000) : (24 * 60 * 60 * 1000);
+
       for (const id in flightPaths) {
         const aircraft = flightPaths[id];
         
+        // 1. 各飛行機の軌跡セグメントから、古いデータをフィルタリング
         aircraft.segments = aircraft.segments.map(segment => {
-          return segment.filter(pt => (now - pt.time) < (24 * 60 * 60 * 1000));
+          return segment.filter(pt => (now - pt.time) < memoryLimitMs);
         }).filter(segment => segment.length > 0); 
 
+        // 💡 iPhone専用：軌跡データが完全に空になった飛行機は、メモリ（ flightPaths ）から完全に抹消する
+        if (isIPhone && aircraft.segments.length === 0) {
+          delete flightPaths[id];
+          continue; // メモリから消したので、下の描画処理（forEach）はスキップして次の飛行機の処理へ
+        }
+
+        // 2. 画面に描画するための有効なセグメントを配列にプッシュする処理
         aircraft.segments.forEach(segment => {
           const hasValidPoints = segment.some(pt => (now - pt.time) < timeLimitIdx);
           if (hasValidPoints && segment.length > 1) {
