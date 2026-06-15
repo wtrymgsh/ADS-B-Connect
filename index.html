@@ -353,9 +353,10 @@
       style: STYLES[currentStyleName],
       center: YYC_CENTER, 
       zoom: isIPhone ? 9 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
+      maxZoom: isIPhone ? 12 : 20,
       bearing: 0,       
       pitch: isIPhone ? 0 : 0, // ★iPhoneなら完全2D(真上)固定！iPadやPCは立体的な45度(3D)で開始！          
-      maxPitch: 85,
+      maxPitch: isIPhone ? 0 : 85,
       cooperativeGestures: false
     });
 
