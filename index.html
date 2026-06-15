@@ -251,7 +251,7 @@
       </div>
 
       <div class="panel-section">
-        <label>🗺️ 地図スタイル</label>
+        <label>⚖️ 地図スタイル</label>
         <div class="btn-group">
           <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Cyber</button>
           <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Backdrop</button>
@@ -306,14 +306,16 @@
 
     let currentStyleName = 'backdrop'; 
     
-    // 📱 【iPhone・スマホ検出ロジック】
-    const isIPhoneDevice = /iPhone|iPod|iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // 🕵️‍♂️ 【超高精度・デバイス厳格仕分けロジック】
+    const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
     
-    let deviceMode = (window.innerWidth < 768 || isIPhoneDevice) ? 'mobile' : 'pc';
+    // デバイスごとの挙動設定
+    let deviceMode = (window.innerWidth < 768 || isIPhone) ? 'mobile' : 'pc';
     let currentLineWidth = 3; 
     
-    // 💡 iPhoneの場合は初期表示を負荷の最も低い「15分」に設定、PCは「1時間」
-    let currentTimespanHours = isIPhoneDevice ? 0.25 : 1;
+    // 💡 iPhoneだけを負荷の一番低い「15分(0.25)」に。iPadとPCは「1時間(1)」で贅沢に開始！
+    let currentTimespanHours = isIPhone ? 0.25 : 1;
     
     let flightPaths = {};
     let selectedAircraftId = null; 
@@ -330,7 +332,7 @@
       }
       
       // UIのボタンの「active」状態を初期タイムスパンに合わせて同期
-      const initialSpanBtnId = isIPhoneDevice ? 'btn-15m' : 'btn-1h';
+      const initialSpanBtnId = isIPhone ? 'btn-15m' : 'btn-1h';
       document.getElementById(initialSpanBtnId).classList.add('active');
     });
 
@@ -348,9 +350,9 @@
       container: 'map',
       style: STYLES[currentStyleName],
       center: YYC_CENTER, 
-      zoom: isIPhoneDevice ? 9 : 8, // iPhoneは少し寄った状態で開始して初期負荷軽減          
+      zoom: isIPhone ? 9.2 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
       bearing: 0,       
-      pitch: 0,           
+      pitch: isIPhone ? 0 : 45, // ★iPhoneなら完全2D(真上)固定！iPadやPCは立体的な45度(3D)で開始！          
       maxPitch: 85,
       cooperativeGestures: false
     });
@@ -402,13 +404,13 @@
       
       initializeConnection();
 
-      // 🎬 iPhone以外の強力な端末のときだけ派手なオープニング自動アニメーションを実行
-      if (!isIPhoneDevice) {
+      // 🎬 iPhone「以外」（＝iPadとPC）の時だけ、5秒後のカッコいい自動ズーム演出を完全に復活！
+      if (!isIPhone) {
         setTimeout(() => {
           map.flyTo({
             center: YYC_CENTER, 
-            zoom: 11,          
-            pitch: 80,          
+            zoom: 10.5,          
+            pitch: 65,          
             bearing: 210,        
             duration: 4000,     
             essential: true
@@ -491,7 +493,6 @@
     }
 
     function processIncomingMessage(msg) {
-      // 📱 安全ガード：座標や高度が不正（NaNなど）な不正値を徹底排除してSafariのクラッシュを防ぐ
       if (msg.lat === undefined || msg.lon === undefined || msg.alt === undefined || isNaN(msg.lat) || isNaN(msg.lon) || isNaN(msg.alt)) {
         return; 
       }
@@ -571,7 +572,6 @@
       };
     }
 
-    // 🛠️ 描画更新処理を関数として独立化
     function renderRadarLayers() {
       const now = Date.now();
       const filterHours = (deviceMode === 'pc') ? currentTimespanHours : 24; 
@@ -630,7 +630,7 @@
         widthMinPixels: 0.1,      
         rounded: true,
         pickable: true, 
-        pickRadius: isIPhoneDevice ? 40 : 30, // iPhoneはタップしづらいので判定を広めに調整
+        pickRadius: (isIPhone || isIPad) ? 40 : 30, 
         parameters: { depthTest: false, depthMask: false },
         onClick: info => {
           if (info.object) {
@@ -652,9 +652,8 @@
       deckOverlay.setProps({ layers: [pathLayer, airspaceLayer] });
     }
 
-    // ⏰ 【デバイス別の動的リフレッシュレート調整】
-    // PC/Macは「1秒に1回」超高精度で更新。iPhoneは「3秒に1回」に落としてメモリのパンクを絶対に防ぐ。
-    const refreshInterval = isIPhoneDevice ? 3000 : 1000;
+    // ⏰ 【リフレッシュレートの最適化】iPhoneのみ3秒、iPadやPCは1秒ごとに更新
+    const refreshInterval = isIPhone ? 3000 : 1000;
     setInterval(renderRadarLayers, refreshInterval);
 
     function switchDeviceMode(mode) {
