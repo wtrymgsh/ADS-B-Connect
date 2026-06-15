@@ -639,9 +639,14 @@
         id: 'flight-paths-layer',
         data: activeSegmentsArray, 
         getPath: d => d.points.map(pt => pt.pos), 
-        getColor: d => d.points.map(pt => getColorByAltitude(pt.rawAlt)), 
+        // ★iPhoneなら不透明度をMAX（255 = 100%）に固定してGPUのブレンド計算負荷をカット！iPad/PCは元の224（半透明）
+        getColor: d => d.points.map(pt => {
+          const c = getColorByAltitude(pt.rawAlt);
+          if (isIPhone) c[3] = 255; 
+          return c;
+        }),
         widthUnits: 'pixels',     
-        getWidth: d => d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2.0) : ((currentLineWidth - 0.3) * 1.0), 
+        getWidth: d => isIPhone ? 1.0 : (d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2.0) : ((currentLineWidth - 0.3) * 1.0)),
         widthMinPixels: 0.1,      
         rounded: true,
         pickable: true, 
