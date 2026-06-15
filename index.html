@@ -350,7 +350,8 @@
 
     const map = new maplibregl.Map({
       container: 'map',
-      style: STYLES[currentStyleName],
+      // style: STYLES[currentStyleName],
+      style: isIPhone ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : STYLES[currentStyleName],
       center: YYC_CENTER, 
       zoom: isIPhone ? 9 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
       maxZoom: isIPhone ? 12 : 20,
