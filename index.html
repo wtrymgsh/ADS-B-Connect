@@ -293,7 +293,7 @@
   <script>
     const YYC_CENTER = [-114.0078, 51.1139];
     const MAPTILER_KEY = 'DoG1rwzHjdAwMa5azhsZ'; 
-    let EXAGGERATION_FACTOR = isIPhone ? 0.0 : 4.0;
+   
     let AIRSPACE_OPACITY = 0.0; 
 
     const CURRENT_HOST = window.location.host; 
@@ -310,6 +310,8 @@
     const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
     
+    let EXAGGERATION_FACTOR = isIPhone ? 0.0 : 4.0;
+ 
     // デバイスごとの挙動設定
     let deviceMode = (window.innerWidth < 768 || isIPhone) ? 'mobile' : 'pc';
     let currentLineWidth = 3; 
