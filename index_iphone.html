@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Calgary YYC 3D Radar - iPhone Edition</title>
+  <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet">
+      
+  <style>
+    body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: sans-serif; }
+    #map {
+      width: 100dvw;
+      height: 100dvh;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    
+    #control-panel {
+      position: absolute; 
+      top: 20px;
+      left: 15px; 
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.85); border-radius: 8px;
+      color: #fff; width: 240px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      overflow: hidden; 
+    }
+
+    .panel-header {
+      padding: 10px 15px;
+      background: rgba(40, 40, 40, 0.9);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #333;
+    }
+    
+    .panel-content { 
+      padding: 15px; 
+      max-height: 700px; 
+      transition: max-height 0.4s cubic-bezier(0.25, 1, 0.5, 1), padding 0.4s;
+    }
+
+    #control-panel.collapsed .panel-content {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border: none;
+    }
+
+    .toggle-icon { transition: transform 0.4s; font-size: 11px; color: #0076ff; }
+    #control-panel.collapsed .toggle-icon { transform: rotate(180deg); }
+
+    .panel-section { margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 5px; }
+    .btn-group { display: flex; gap: 3px; width: 100%; flex-wrap: wrap; }
+    .btn {
+      flex: 1; background: #333; color: #fff; border: none; padding: 6px 0;
+      border-radius: 4px; cursor: pointer; font-size: 11px; transition: 0.2s;
+      text-align: center; min-width: 55px;
+    }
+    .btn.active { background: #0076ff; font-weight: bold; }
+    input[type=range] { width: 100%; cursor: pointer; }
+
+    .control-btn {
+      position: absolute; 
+      right: 15px; 
+      z-index: 100;
+      background: rgba(20, 20, 20, 0.5); color: #0076ff; border: 1px solid #0076ff;
+      padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: bold;
+      box-shadow: 0 0 10px rgba(0, 118, 255, 0.3); transition: all 0.2s;
+      width: 80px; 
+      text-align: center;
+    }
+    #compass-btn { top: 20px; }
+    #topview-btn { top: 65px; }
+    #yyc-btn { top: 110px; }
+
+    #compass-btn:active, #topview-btn:active, #yyc-btn:active {
+      background: #ff00ff !important;         
+      border-color: #ff00ff !important;
+      color: #000000 !important;             
+    }
+
+    .notes-section {
+      background: rgba(0, 0, 0, 0.4); border-radius: 6px; overflow: hidden;
+      border-left: 3px solid #ffb000; margin-top: 5px;
+    }
+    .notes-title {
+      font-size: 11px; font-weight: bold; color: #ffb000; padding: 6px 10px;
+      cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+      background: rgba(255, 176, 0, 0.05);
+    }
+    .notes-arrow { font-size: 9px; transition: transform 0.3s; color: #ffb000; }
+    .notes-section.expanded .notes-arrow { transform: rotate(180deg); }
+    .notes-body {
+      max-height: 0; overflow: hidden; transition: max-height 0.3s cubic-bezier(0.25, 1, 0.5, 1), padding 0.3s;
+      padding: 0 10px;
+    }
+    .notes-section.expanded .notes-body { max-height: 250px; padding: 8px 10px 10px 10px; }
+    .notes-list { margin: 0; padding-left: 12px; font-size: 10.5px; color: #ccc; line-height: 1.4; }
+    .notes-list li { margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <button id="compass-btn" class="control-btn" onclick="resetToNorth()">北を上に</button>
+  <button id="topview-btn" class="control-btn" onclick="setViewToTop()">真上から</button>
+  <button id="yyc-btn" class="control-btn" onclick="toggleYycLock()">YYC</button>
+
+  <div id="control-panel">
+    <div class="panel-header" onclick="togglePanel()">
+      <span>📡 RADAR CONTROL (iOS)</span>
+      <span id="toggle-btn" class="toggle-icon">▲</span>
+    </div>
+    
+    <div class="panel-content">
+      <div class="panel-section">
+        <label>⏰ タイムスパン</label>
+        <div class="btn-group">
+          <button id="btn-15m" class="btn active" onclick="setTimespan(0.25)">15min</button>
+          <button id="btn-1h" class="btn" onclick="setTimespan(1)">1h</button>
+          <button id="btn-3h" class="btn" onclick="setTimespan(3)">3h</button>
+          <button id="btn-6h" class="btn" onclick="setTimespan(6)">6h</button>
+          <button id="btn-12h" class="btn" onclick="setTimespan(12)">12h</button>
+          <button id="btn-24h" class="btn" onclick="setTimespan(24)">24h</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div id="notes-accordion" class="notes-section">
+          <div class="notes-title" onclick="toggleNotes()">
+            <span>⚠️ 使用上の注意</span>
+            <span class="notes-arrow">▼</span>
+          </div>
+          <div class="notes-body">
+            <ul class="notes-list">
+              <li>このページはiPhone用に極限まで軽量化された3Dレーダー画面です。</li>
+              <li>航跡タップ機能や管制圏表示は、端末のクラッシュを防ぐため無効化されています。</li>
+              <li>「15min」から順にテストし、お使いの端末で何時間まで耐えられるかお試しください。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script>
+    const YYC_CENTER = [-114.0078, 51.1139];
+    const MAPTILER_KEY = 'DoG1rwzHjdAwMa5azhsZ'; 
+   
+    // iPhone専用固定スペック
+    const EXAGGERATION_FACTOR = 4.0; // 高度強調4倍固定
+    const currentLineWidth = 2;      // 線の太さ2固定
+    const deviceMode = 'mobile';     // 都度取得（モバイル推奨）固定
+    
+    let currentTimespanHours = 0.25; // 初期値15min
+    let flightPaths = {};
+    let BACKEND_URL = "";
+    let ws = null;
+
+    function togglePanel() {
+      document.getElementById('control-panel').classList.toggle('collapsed');
+    }
+
+    function toggleNotes() {
+      document.getElementById('notes-accordion').classList.toggle('expanded');
+    }
+
+    // マップ初期化（Backdropかつ最初から3D傾き状態）
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`, // Backdrop固定
+      center: YYC_CENTER, 
+      zoom: 9.5, 
+      maxZoom: 12,
+      bearing: 0,       
+      pitch: 45, // 最初から立体的な45度で開始
+      maxPitch: 75,
+      cooperativeGestures: true // 二本指での操作を強制し誤動作防止
+    });
+
+    function toggleYycLock() {
+      map.easeTo({ center: YYC_CENTER, duration: 800, cubicBezier: [0.25, 1, 0.5, 1], essential: true });
+    }
+
+    function applyStyleSettings() {
+      if (!map.getSource('maptiler-terrain')) {
+        map.addSource('maptiler-terrain', {
+          type: 'raster-dem',
+          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
+          tileSize: 256
+        });
+      }
+      map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
+    }
+
+    async function initializeConnection() {
+      try {
+        const response = await fetch('url.json');
+        const data = await response.json();
+        if (data && data.backend_url) {
+          BACKEND_URL = data.backend_url;
+        } else {
+          throw new Error("Invalid json");
+        }
+      } catch (e) {
+        BACKEND_URL = "http://localhost:8056";
+      }
+      loadHistoricalData();
+      connectWebSocket();
+    }
+
+    map.on('load', () => {
+      applyStyleSettings();
+      initializeConnection();
+    });
+
+    const deckOverlay = new deck.MapboxOverlay({ layers: [], onClick: () => {} });
+    map.addControl(deckOverlay);
+
+    function getColorByAltitude(rawAlt) {
+      let currentMinAlt = 0; 
+      let currentMaxAlt = 9000; 
+      const ratio = Math.min(Math.max((rawAlt - currentMinAlt) / (currentMaxAlt - currentMinAlt), 0), 1);
+      return [
+        Math.round(255 * (1 - ratio)),
+        Math.round(200 * (1 - Math.abs(ratio - 0.5) * 2)),
+        Math.round(255 * ratio),
+        255 // 不透明
+      ];
+    }
+
+    async function loadHistoricalData() {
+      if (!BACKEND_URL) return; 
+      try {
+        console.log(`⏳ Loading ${currentTimespanHours} hours history...`);
+        const response = await fetch(`${BACKEND_URL}/api/history?hours=${currentTimespanHours}`);
+        const data = await response.json();
+        
+        flightPaths = {};
+        data.forEach(msg => { processIncomingMessage(msg); });
+      } catch (e) {
+        console.error("❌ History load failed:", e);
+      }
+    }
+
+    function processIncomingMessage(msg) {
+        if (msg.lat === undefined || msg.lon === undefined || msg.alt === undefined || isNaN(msg.lat) || isNaN(msg.lon) || isNaN(msg.alt)) {
+            return; 
+        }
+
+        if (!flightPaths[msg.id]) {
+            flightPaths[msg.id] = { id: msg.id, segments: [[]] };
+        }
+
+        const aircraft = flightPaths[msg.id];
+        let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
+        const newCoord = [msg.lon, msg.lat, adjustedAlt];
+        let currentSegment = aircraft.segments[aircraft.segments.length - 1];
+        
+        if (currentSegment.length === 0) {
+            currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: msg.ts });
+        } else {
+            const lastPoint = currentSegment[currentSegment.length - 1];
+            
+            // 🌟【超軽量化：距離間引きロジック（約100m未満は無視）】🌟
+            const latDiff = Math.abs(msg.lat - lastPoint.pos[1]);
+            const lonDiff = Math.abs(msg.lon - lastPoint.pos[0]);
+            
+            if (latDiff < 0.0008 && lonDiff < 0.0008) {
+              return; 
+            }
+            
+            if ((msg.ts - lastPoint.time) > 1800 * 1000) {
+              aircraft.segments.push([{ pos: newCoord, rawAlt: msg.alt, time: msg.ts }]);
+            } else {
+                if (lastPoint.pos[0] !== msg.lon || lastPoint.pos[1] !== msg.lat) {
+                  currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: msg.ts });
+                }
+            }
+        }
+    }
+
+    function connectWebSocket() {
+      if (!BACKEND_URL) return;
+      const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss://' : 'ws://';
+      const wsHost = BACKEND_URL.replace(/^https?:\/\//, '');
+      ws = new WebSocket(`${wsProtocol}${wsHost}/ws`);
+      ws.onmessage = (event) => { processIncomingMessage(JSON.parse(event.data)); };
+      ws.onclose = () => { setTimeout(connectWebSocket, 5000); };
+    }
+
+    function renderRadarLayers() {
+      const now = Date.now();
+      const timeLimitIdx = currentTimespanHours * 60 * 60 * 1000; 
+      let activeSegmentsArray = [];
+
+      for (const id in flightPaths) {
+        const aircraft = flightPaths[id];
+        
+        aircraft.segments = aircraft.segments.map(segment => {
+          return segment.filter(pt => (now - pt.time) < timeLimitIdx);
+        }).filter(segment => segment.length > 0); 
+
+        if (aircraft.segments.length === 0) {
+          delete flightPaths[id];
+          continue; 
+        }
+
+        aircraft.segments.forEach(segment => {
+          if (segment.length > 1) {
+            activeSegmentsArray.push({ id: aircraft.id, points: segment });
+          }
+        });
+      }
+
+      const pathLayer = new deck.PathLayer({
+        id: 'flight-paths-layer',
+        data: activeSegmentsArray, 
+        getPath: d => d.points.map(pt => pt.pos), 
+        getColor: d => d.points.map(pt => getColorByAltitude(pt.rawAlt)),
+        widthUnits: 'pixels',     
+        getWidth: currentLineWidth, 
+        widthMinPixels: 0.1,      
+        rounded: true,
+        pickable: false, 
+        billboard: true,      
+        miterLimit: 2,
+        updateTriggers: {
+          getPath: [activeSegmentsArray, currentTimespanHours],
+          getColor: [activeSegmentsArray, currentTimespanHours]
+        }
+      });
+
+      deckOverlay.setProps({ layers: [pathLayer] });
+    }
+
+    setInterval(renderRadarLayers, 3000);
+
+    function setTimespan(hours) {
+      currentTimespanHours = hours;
+      const hourList = ['15m', '1h', '3h', '6h', '12h', '24h'];
+      hourList.forEach(h => {
+        const btn = document.getElementById(`btn-${h}`);
+        if (btn) {
+          let isMatch = (h === '15m' && hours === 0.25) || (h === '1h' && hours === 1) ||
+                        (h === '3h' && hours === 3) || (h === '6h' && hours === 6) ||
+                        (h === '12h' && hours === 12) || (h === '24h' && hours === 24);
+          btn.classList.toggle('active', isMatch);
+        }
+      });
+      loadHistoricalData(); 
+    }
+
+    function resetToNorth() {
+      map.easeTo({ bearing: 0, pitch: map.getPitch(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+    }
+
+    function setViewToTop() {
+      map.easeTo({ pitch: 0, bearing: map.getBearing(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+    }
+  </script>
+</body>
+</html>
