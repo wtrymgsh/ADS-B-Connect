@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>Calgary YYC 3D Radar - Terminal Control Area Version</title>
-  <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
-  <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
-  <script src="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/extensions@8.9.35/dist.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@3.6.8/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.6.8/dist/maplibre-gl.css" rel="stylesheet">
   <style>
     body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: sans-serif; }
     #map {
@@ -371,15 +371,21 @@
     }
 
     function applyStyleSettings() {
-      if (!map.getSource('maptiler-terrain')) {
-        map.addSource('maptiler-terrain', {
-          type: 'raster-dem',
-          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
-          tileSize: 256
-        });
-      }
-      map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
-    }
+  // iPhoneなど、高度強調が0の場合はTerrainを設定しない（クラッシュ防止）
+  if (EXAGGERATION_FACTOR === 0) {
+    map.setTerrain(null);
+    return;
+  }
+
+  if (!map.getSource('maptiler-terrain')) {
+    map.addSource('maptiler-terrain', {
+      type: 'raster-dem',
+      url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
+      tileSize: 256
+    });
+  }
+  map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
+}
 
     async function initializeConnection() {
       try {
