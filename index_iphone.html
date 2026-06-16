@@ -295,7 +295,12 @@
       const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss://' : 'ws://';
       const wsHost = BACKEND_URL.replace(/^https?:\/\//, '');
       ws = new WebSocket(`${wsProtocol}${wsHost}/ws`);
-      ws.onmessage = (event) => { processIncomingMessage(JSON.parse(event.data)); };
+      
+      ws.onmessage = (event) => { 
+        processIncomingMessage(JSON.parse(event.data)); 
+        // 🌟【対策】新しいデータが届いた瞬間だけ画面を更新する
+        renderRadarLayers(); 
+      };
       ws.onclose = () => { setTimeout(connectWebSocket, 5000); };
     }
 
@@ -344,9 +349,9 @@
       deckOverlay.setProps({ layers: [pathLayer] });
     }
 
-    setInterval(renderRadarLayers, 3000);
+    // ❌【削除】setInterval(renderRadarLayers, 3000); ➔ 定期タイマーを廃止して暴走をストップ
 
-    function setTimespan(hours) {
+    async function setTimespan(hours) {
       currentTimespanHours = hours;
       const hourList = ['15m', '1h', '3h', '6h', '12h', '24h'];
       hourList.forEach(h => {
@@ -358,7 +363,10 @@
           btn.classList.toggle('active', isMatch);
         }
       });
-      loadHistoricalData(); 
+      
+      // 🌟【対策】タイムスパン切り替え時にも即座にデータを再読み込みして描画
+      await loadHistoricalData(); 
+      renderRadarLayers();
     }
 
     function resetToNorth() {
