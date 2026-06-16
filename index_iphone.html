@@ -288,6 +288,28 @@
                 }
             }
         }
+
+        // =====================================================
+        // 📱【🌟 iPhoneクラッシュ絶対防止追加：データ数ハードリミット】
+        // =====================================================
+        // 1つの機体の軌跡（全セグメント合計の座標数）が多すぎる場合、
+        // 古い座標から順に削除して、iPhoneのメモリが溢れるのを防ぎます。
+        const MAX_POINTS_PER_AIRCRAFT = 150; // 1機あたり最大150点に制限（見た目の滑らかさは維持できます）
+        
+        // 現在この機体が持っている総ポイント数をカウント
+        let totalPoints = aircraft.segments.reduce((sum, seg) => sum + seg.length, 0);
+        
+        // 制限を超えている場合、一番古いセグメントの先頭から削る
+        while (totalPoints > MAX_POINTS_PER_AIRCRAFT) {
+            if (aircraft.segments[0].length > 0) {
+                aircraft.segments[0].shift(); // 最古の点を削除
+                totalPoints--;
+            }
+            // 空になったセグメントがあれば削除（ただし最後の1つは残す）
+            if (aircraft.segments[0].length === 0 && aircraft.segments.length > 1) {
+                aircraft.segments.shift();
+            }
+        }
     }
 
     function connectWebSocket() {
