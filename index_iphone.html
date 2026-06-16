@@ -193,6 +193,11 @@
     }
 
     function applyStyleSettings() {
+      // 🌟【グラフィック超軽量化：3D地形（Terrain）の読み込みをストップ】
+      // パネルやボタンの見た目、航跡の3D立体表示はすべてそのまま維持し、
+      // 背景の地図の「山や谷の凹凸表現」だけをオフにして、iPhoneのGPUクラッシュを完全に防ぎます。
+      
+      /* ➔ iPhoneの負荷軽減のため、以下のTerrain処理をコメントアウト（無効化）します
       if (!map.getSource('maptiler-terrain')) {
         map.addSource('maptiler-terrain', {
           type: 'raster-dem',
@@ -201,6 +206,7 @@
         });
       }
       map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
+      */
     }
 
     async function initializeConnection() {
