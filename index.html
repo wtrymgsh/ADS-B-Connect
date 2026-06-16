@@ -3,6 +3,16 @@
 <head>
   <meta charset="utf-8">
   <title>Calgary YYC 3D Radar - Terminal Control Area Version</title>
+  
+  <script>
+    // ユーザーのデバイスがiPhoneまたはiPodかどうかを判定
+    const isIPhoneDevice = /iPhone|iPod/.test(navigator.userAgent);
+    if (isIPhoneDevice) {
+      // iPhoneだったら、自動的にiPhone専用ページにジャンプさせる
+      window.location.href = "index_iphone.html";
+    }
+  </script>
+  
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
   <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
