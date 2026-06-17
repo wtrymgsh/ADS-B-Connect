@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  
+
   <title>Calgary YYC 3D Radar - iPhone Edition</title>
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
@@ -186,8 +186,11 @@
       maxZoom: 12,
       bearing: 0,       
       pitch: 45, // 最初から立体的な45度で開始
-      maxPitch: 75,
-      cooperativeGestures: true // 二本指での操作を強制し誤動作防止
+      maxPitch: 60,
+      // 🌟【変更】cooperativeGestures をやめて、スマホ専用の指ジェスチャーを個別にカチッと設定します
+      cooperativeGestures: false, 
+      dragRotate: true,           // 2本指での回転・ピッチ変更を許可
+      touchZoomRotate: true       // ピンチズームと回転を許可
     });
 
     function toggleYycLock() {
