@@ -161,7 +161,7 @@
    
     // iPhone専用固定スペック
     const EXAGGERATION_FACTOR = 4.0; // 高度強調4倍固定
-    const currentLineWidth = 2;      // 線の太さ2固定
+    const currentLineWidth = 1;      // 線の太さ1固定
     const deviceMode = 'mobile';     // 都度取得（モバイル推奨）固定
     
     let currentTimespanHours = 0.25; // 初期値15min
@@ -274,7 +274,13 @@
         }
 
         const aircraft = flightPaths[msg.id];
-        let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
+        // 🌟【標高補正】届いた高度（メートル）から、YYCの標高（1,082m）を引き算します
+        // 地上走行中（標高1,082m）の時は 0m になり、綺麗に地面に接地します
+        let altAboveYYC = Math.max(0, msg.alt - 1082);
+
+        // 補正した高度に対して、これまで通りの高度強調（4倍）をかけます
+        let adjustedAlt = altAboveYYC * EXAGGERATION_FACTOR;
+        
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
         let currentSegment = aircraft.segments[aircraft.segments.length - 1];
         
