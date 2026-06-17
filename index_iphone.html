@@ -184,9 +184,9 @@
       center: YYC_CENTER, 
       zoom: 9.5, 
       maxZoom: 12,
-      bearing: 0,       
+      bearing: 135,       
       pitch: 45, // 最初から立体的な45度で開始
-      maxPitch: 60,
+      maxPitch: 70,
       // 🌟【変更】cooperativeGestures をやめて、スマホ専用の指ジェスチャーを個別にカチッと設定します
       cooperativeGestures: false, 
       dragRotate: true,           // 2本指での回転・ピッチ変更を許可
@@ -280,7 +280,7 @@
 
         // 補正した高度に対して、これまで通りの高度強調（4倍）をかけます
         let adjustedAlt = altAboveYYC * EXAGGERATION_FACTOR;
-        
+
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
         let currentSegment = aircraft.segments[aircraft.segments.length - 1];
         
