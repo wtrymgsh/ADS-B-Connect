@@ -531,7 +531,7 @@
       console.log("📡 WebSocketに接続を試みます ➡️", WS_BASE);
       
       // 💡 const を付けずに、既存のグローバル変数 ws を使う
-      ws = new WebSocket(`${WS_BASE}/ws`);
+      ws = new WebSocket(`${WS_BASE}`);
       
       ws.onmessage = (event) => {
         if (event.data === "connected" || !event.data.startsWith("{")) {
