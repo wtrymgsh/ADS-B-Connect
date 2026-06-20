@@ -528,10 +528,15 @@
     // 💡 関数内の const を外し、上で用意したグローバル変数 ws に代入するようにします
     function connectWebSocket() {
       if (!WS_BASE) return;
-      console.log("📡 WebSocketに接続を試みます ➡️", WS_BASE);
       
-      // 💡 const を付けずに、既存のグローバル変数 ws を使う
-      ws = new WebSocket(`${WS_BASE}`);
+      // 💡 パスが確実に「/ws」で終わるように安全に組み立てる
+      // WS_BASE が「/」で終わっている場合と終わっていない場合、両方に対応
+      const targetUrl = WS_BASE.endsWith('/') ? `${WS_BASE}ws` : `${WS_BASE}/ws`;
+      
+      console.log("📡 WebSocketに接続を試みます ➡️", targetUrl);
+      
+      // 💡 組み立てた targetUrl を指定して接続！
+      ws = new WebSocket(targetUrl);
       
       ws.onmessage = (event) => {
         if (event.data === "connected" || !event.data.startsWith("{")) {
