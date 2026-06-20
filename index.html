@@ -364,11 +364,34 @@
       map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
     }
 
-    map.on('load', () => {
+    // 💡 1. map.on('load') を async 関数に変更し、起動時に url.json を自動取得させる
+    map.on('load', async () => {
       applyStyleSettings();
       document.getElementById('mode-pc').classList.toggle('active', deviceMode === 'pc');
       document.getElementById('mode-mobile').classList.toggle('active', deviceMode === 'mobile');
+
+      try {
+        console.log("📂 url.json を読み込み中...");
+        // キャッシュに邪魔されないよう、ミリ秒のタイムスタンプを付与
+        const urlRes = await fetch('url.json?t=' + Date.now());
+        const urlData = await urlRes.json();
+        
+        if (urlData.backend_url) {
+          HTTP_BASE = urlData.backend_url;
+          // https:// を wss:// に変換してWebSocketの宛先を作る
+          WS_BASE = urlData.backend_url.replace('http://', 'ws://').replace('https://', 'wss://');
+          console.error("📢 [DEBUG] 通信先が確定しました ➡️", HTTP_BASE);
+        }
+      } catch (e) {
+        console.error("⚠️ url.jsonのロードに失敗したため、ローカルモードで動作します:", e);
+        // フォールバック（念のための初期値維持）
+        HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
+        WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
+      }
+
+      // 💡 URLの書き換えが完全に完了した「後」でデータをロードし、WebSocketを繋ぐ
       loadHistoricalData();
+      connectWebSocket();
 
       setTimeout(() => {
         map.flyTo({
@@ -441,7 +464,6 @@
       const fetchHours = (deviceMode === 'pc') ? 24 : currentTimespanHours;
       try {
         console.log(`⏳ Loading ${fetchHours} hours of history from server...`);
-        // 💡 HTTP_BASE を適用して 404 を回避
         const response = await fetch(`${HTTP_BASE}/api/history?hours=${fetchHours}`);
         const data = await response.json();
         
@@ -501,8 +523,25 @@
       }
     }
 
-    // 💡 WS_BASE を使用して正しいWebsocket接続先を設定
-    const ws = new WebSocket(`${WS_BASE}/ws`);
+    // 💡 2. ページ読み込み時に即時接続を走らせず、URLが確定した段階で呼び出せるよう関数化
+    function connectWebSocket() {
+      if (!WS_BASE) return;
+      console.log("📡 WebSocketに接続を試みます ➡️", WS_BASE);
+      const ws = new WebSocket(`${WS_BASE}/ws`);
+      
+      ws.onmessage = (event) => {
+        if (event.data === "connected" || !event.data.startsWith("{")) {
+          console.log("通信確立:", event.data);
+          return;
+        }
+        const msg = JSON.parse(event.data);
+        processIncomingMessage(msg);
+      };
+
+      ws.onerror = (e) => console.error("❌ WebSocket接続中にエラーが発生しました:", e);
+      ws.onclose = () => console.log("🔒 WebSocketが切断されました。");
+    }
+
     
     ws.onmessage = (event) => {
       // 💡 "connected" テキストを綺麗にスルーするガードを統合
