@@ -284,11 +284,13 @@
     let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
 
-    // 💡 完全に自動判定化：Cloudflare経由でもローカルテストでも一切書き換え不要にする決定版
-    const IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || window.location.hostname.includes('cloudflare');
-    const HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
-    const WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
-
+    // 💡 let にすることで、後から url.json の値に安全に上書きできるようになります
+    let IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || window.location.hostname.includes('cloudflare');
+    let HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
+    let WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
+    
+    // 💡 変数 ws がどこからでも参照できるようにグローバルに宣言だけ用意しておく（ReferenceError対策）
+    let ws = null;
 
 
     const STYLES = {
@@ -523,11 +525,13 @@
       }
     }
 
-    // 💡 2. ページ読み込み時に即時接続を走らせず、URLが確定した段階で呼び出せるよう関数化
+    // 💡 関数内の const を外し、上で用意したグローバル変数 ws に代入するようにします
     function connectWebSocket() {
       if (!WS_BASE) return;
       console.log("📡 WebSocketに接続を試みます ➡️", WS_BASE);
-      const ws = new WebSocket(`${WS_BASE}/ws`);
+      
+      // 💡 const を付けずに、既存のグローバル変数 ws を使う
+      ws = new WebSocket(`${WS_BASE}/ws`);
       
       ws.onmessage = (event) => {
         if (event.data === "connected" || !event.data.startsWith("{")) {
@@ -542,7 +546,7 @@
       ws.onclose = () => console.log("🔒 WebSocketが切断されました。");
     }
 
-    
+
     ws.onmessage = (event) => {
       // 💡 "connected" テキストを綺麗にスルーするガードを統合
       if (event.data === "connected" || !event.data.startsWith("{")) {
