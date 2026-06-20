@@ -547,15 +547,6 @@
     }
 
 
-    ws.onmessage = (event) => {
-      // 💡 "connected" テキストを綺麗にスルーするガードを統合
-      if (event.data === "connected" || !event.data.startsWith("{")) {
-        console.log("通信確立:", event.data);
-        return;
-      }
-      const msg = JSON.parse(event.data);
-      processIncomingMessage(msg);
-    };
 
     // ⏱️ メイン描画ループ
     setInterval(() => {
