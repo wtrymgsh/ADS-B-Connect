@@ -284,10 +284,12 @@
     let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
 
-    // 💡 【ここを修正】今開いているのが本番（8056）または内部用（8060）なら相対パス。Go Live（それ以外）ならPythonの外部ポート(8056)を直撃する
-    const IS_NATIVE = window.location.port === '8056' || window.location.port === '8060';
+    // 💡 完全に自動判定化：Cloudflare経由でもローカルテストでも一切書き換え不要にする決定版
+    const IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || window.location.hostname.includes('cloudflare');
     const HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
     const WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
+
+
 
     const STYLES = {
       cyber: `https://api.maptiler.com/maps/streets-v2-dark/style.json`,
