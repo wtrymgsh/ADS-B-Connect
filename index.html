@@ -2,21 +2,14 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Calgary YYC 3D Radar - Terminal Control Area Version</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   
-  <script>
-    // ユーザーのデバイスがiPhoneまたはiPodかどうかを判定
-    const isIPhoneDevice = /iPhone|iPod/.test(navigator.userAgent);
-    if (isIPhoneDevice) {
-      // iPhoneだったら、自動的にiPhone専用ページにジャンプさせる
-      window.location.href = "index_iphone.html";
-    }
-  </script>
-  
+  <title>ADS-B 3D Radar (External Session)</title>
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
-  <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
-  <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet"> <style>
+  <script src="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.X/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
     body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: sans-serif; }
     #map {
       width: 100vw;
@@ -31,7 +24,7 @@
     #control-panel {
       position: absolute; 
       top: 40px;
-      left: 15px; 
+      left: 15px;
       z-index: 100;
       background: rgba(20, 20, 20, 0.85); border-radius: 8px;
       color: #fff; width: 240px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
@@ -97,8 +90,8 @@
 
     #compass-btn { top: 40px; }
     #topview-btn { top: 95px; }
-    
     #yyc-btn { top: 150px; }
+    
     #yyc-btn.active {
       background: #0076ff;
       color: #fff;
@@ -159,19 +152,9 @@
       user-select: none;
       background: rgba(255, 176, 0, 0.05);
     }
-    .notes-title:hover {
-      background: rgba(255, 176, 0, 0.15);
-    }
-    
-    .notes-arrow {
-      font-size: 9px;
-      transition: transform 0.3s;
-      color: #ffb000;
-    }
-    
-    .notes-section.expanded .notes-arrow {
-      transform: rotate(180deg);
-    }
+    .notes-title:hover { background: rgba(255, 176, 0, 0.15); }
+    .notes-arrow { font-size: 9px; transition: transform 0.3s; color: #ffb000; }
+    .notes-section.expanded .notes-arrow { transform: rotate(180deg); }
 
     .notes-body {
       max-height: 0;
@@ -192,12 +175,8 @@
       color: #ccc;
       line-height: 1.4;
     }
-    .notes-list li {
-      margin-bottom: 5px;
-    }
-    .notes-list li:last-child {
-      margin-bottom: 0;
-    }
+    .notes-list li { margin-bottom: 5px; }
+    .notes-list li:last-child { margin-bottom: 0; }
   </style>
 </head>
 <body>
@@ -236,7 +215,7 @@
         <label>⏰ タイムスパン</label>
         <div class="btn-group">
           <button id="btn-15m" class="btn" onclick="setTimespan(0.25)">15min</button>
-          <button id="btn-1h" class="btn" onclick="setTimespan(1)">1h</button>
+          <button id="btn-1h" class="btn active" onclick="setTimespan(1)">1h</button>
           <button id="btn-3h" class="btn" onclick="setTimespan(3)">3h</button>
           <button id="btn-6h" class="btn" onclick="setTimespan(6)">6h</button>
           <button id="btn-12h" class="btn" onclick="setTimespan(12)">12h</button>
@@ -245,8 +224,8 @@
       </div>
 
       <div class="panel-section">
-        <label>📐 線の太さ: <span id="width-val">1</span></label>
-        <input type="range" id="width-slider" min="1" max="5" step="1" value="1" oninput="updateLineWidth(this.value)">
+        <label>📐 線の太さ: <span id="width-val">3</span></label>
+        <input type="range" id="width-slider" min="1" max="5" step="1" value="3" oninput="updateLineWidth(this.value)">
       </div>
       
       <div class="panel-section">
@@ -260,7 +239,7 @@
       </div>
 
       <div class="panel-section">
-        <label>⚖️ 地図スタイル</label>
+        <label>🗺️ 地図スタイル</label>
         <div class="btn-group">
           <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Cyber</button>
           <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Backdrop</button>
@@ -302,37 +281,26 @@
   <script>
     const YYC_CENTER = [-114.0078, 51.1139];
     const MAPTILER_KEY = '4zm5Q8aC8S4LHhAT2L32'; 
-   
+    let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
 
-    const CURRENT_HOST = window.location.host; 
+    // 💡 【ここを修正】今開いているのが本番（8056）または内部用（8060）なら相対パス。Go Live（それ以外）ならPythonの外部ポート(8056)を直撃する
+    const IS_NATIVE = window.location.port === '8056' || window.location.port === '8060';
+    const HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
+    const WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
 
     const STYLES = {
-      cyber: `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${MAPTILER_KEY}`,
-      backdrop: `https://api.maptiler.com/maps/backdrop/style.json?key=${MAPTILER_KEY}`,
-      satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`
+      cyber: `https://api.maptiler.com/maps/streets-v2-dark/style.json`,
+      backdrop: `https://api.maptiler.com/maps/backdrop/style.json`,
+      satellite: `https://api.maptiler.com/maps/hybrid/style.json`
     };
 
     let currentStyleName = 'backdrop'; 
-    
-    // 🕵️‍♂️ 【超高精度・デバイス厳格仕分けロジック】
-    const isIPad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
-    
-    let EXAGGERATION_FACTOR = isIPhone ? 0.0 : 4.0;
- 
-    // デバイスごとの挙動設定
-    let deviceMode = (window.innerWidth < 768 || isIPhone) ? 'mobile' : 'pc';
+    let deviceMode = (window.innerWidth < 768 || /Mobi|Android|iPhone|iPad|Macintosh/i.test(navigator.userAgent) && 'ontouchend' in document) ? 'mobile' : 'pc';
     let currentLineWidth = 3; 
-    
-    // 💡 iPhoneだけを負荷の一番低い「15分(0.25)」に。iPadとPCは「1時間(1)」で贅沢に開始！
-    let currentTimespanHours = isIPhone ? 0.25 : 1;
-    
+    let currentTimespanHours = 1;
     let flightPaths = {};
     let selectedAircraftId = null; 
-
-    let BACKEND_URL = "";
-    let ws = null;
 
     document.addEventListener("DOMContentLoaded", () => {
       const widthSlider = document.getElementById('width-slider');
@@ -341,10 +309,6 @@
         widthSlider.value = currentLineWidth;
         widthVal.innerText = currentLineWidth;
       }
-      
-      // UIのボタンの「active」状態を初期タイムスパンに合わせて同期
-      const initialSpanBtnId = isIPhone ? 'btn-15m' : 'btn-1h';
-      document.getElementById(initialSpanBtnId).classList.add('active');
     });
 
     function togglePanel() {
@@ -359,15 +323,23 @@
 
     const map = new maplibregl.Map({
       container: 'map',
-      // style: STYLES[currentStyleName],
-      style: isIPhone ? 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' : STYLES[currentStyleName],
+      style: STYLES[currentStyleName],
       center: YYC_CENTER, 
-      zoom: isIPhone ? 9 : 8, // iPhoneは最初から寄せて描画数を絞り、iPadは大画面で見渡す
-      maxZoom: isIPhone ? 12 : 20,
+      zoom: 8,          
       bearing: 0,       
-      pitch: isIPhone ? 0 : 0, // ★iPhoneなら完全2D(真上)固定！iPadやPCは立体的な45度(3D)で開始！          
-      maxPitch: isIPhone ? 0 : 85,
-      cooperativeGestures: false
+      pitch: 0,           
+      maxPitch: 85,
+      cooperativeGestures: false,
+      transformRequest: (url, resourceType) => {
+        if (url.includes("api.maptiler.com")) {
+          let cleanUrl = url.replace(/[?&]key=[^&]+/, "").replace(/[?&]session=[^&]+/, "");
+          const separator = cleanUrl.includes("?") ? "&" : "?";
+          return {
+            url: `${cleanUrl}${separator}key=${MAPTILER_KEY}`
+          };
+        }
+        return { url };
+      }
     });
 
     function toggleYycLock() {
@@ -380,64 +352,32 @@
     }
 
     function applyStyleSettings() {
-      // iPhoneなど、高度強調が0（3D地形成分が不要）の場合はTerrain設定をスキップしてクラッシュを防ぐ
-      if (EXAGGERATION_FACTOR === 0) {
-        if (map.getTerrain()) {
-          map.setTerrain(null);
-        }
-        return;
-      }
-
       if (!map.getSource('maptiler-terrain')) {
         map.addSource('maptiler-terrain', {
           type: 'raster-dem',
-          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json?key=${MAPTILER_KEY}`,
+          url: `https://api.maptiler.com/tiles/terrain-rgb-v2/tiles.json`,
           tileSize: 256
         });
       }
       map.setTerrain({ source: 'maptiler-terrain', exaggeration: EXAGGERATION_FACTOR });
     }
 
-    async function initializeConnection() {
-      try {
-        const response = await fetch('url.json');
-        const data = await response.json();
-        
-        if (data && data.backend_url) {
-          BACKEND_URL = data.backend_url;
-          console.log("🌐 接続先URLを自動取得しました:", BACKEND_URL);
-        } else {
-          throw new Error("jsonの中身が不正です");
-        }
-      } catch (e) {
-        console.warn("⚠️ url.json の読み込みに失敗しました。localhostで接続します:", e);
-        BACKEND_URL = "http://localhost:8056";
-      }
-
-      loadHistoricalData();
-      connectWebSocket();
-    }
-
     map.on('load', () => {
       applyStyleSettings();
       document.getElementById('mode-pc').classList.toggle('active', deviceMode === 'pc');
       document.getElementById('mode-mobile').classList.toggle('active', deviceMode === 'mobile');
-      
-      initializeConnection();
+      loadHistoricalData();
 
-      // 🎬 iPhone「以外」（＝iPadとPC）の時だけ、5秒後のカッコいい自動ズーム演出を完全に復活！
-      if (!isIPhone) {
-        setTimeout(() => {
-          map.flyTo({
-            center: YYC_CENTER, 
-            zoom: 11,          
-            pitch: 80,          
-            bearing: 210,        
-            duration: 4000,     
-            essential: true
-          });
-        }, 5000); 
-      }
+      setTimeout(() => {
+        map.flyTo({
+          center: YYC_CENTER, 
+          zoom: 11,          
+          pitch: 80,          
+          bearing: 210,        
+          duration: 4000,     
+          essential: true
+        });
+      }, 5000); 
     });
 
     function switchMapStyle(styleName) {
@@ -496,11 +436,11 @@
     ];
 
     async function loadHistoricalData() {
-      if (!BACKEND_URL) return; 
       const fetchHours = (deviceMode === 'pc') ? 24 : currentTimespanHours;
       try {
         console.log(`⏳ Loading ${fetchHours} hours of history from server...`);
-        const response = await fetch(`${BACKEND_URL}/api/history?hours=${fetchHours}`);
+        // 💡 HTTP_BASE を適用して 404 を回避
+        const response = await fetch(`${HTTP_BASE}/api/history?hours=${fetchHours}`);
         const data = await response.json();
         
         flightPaths = {};
@@ -514,21 +454,14 @@
     }
 
     function processIncomingMessage(msg) {
-      if (msg.lat === undefined || msg.lon === undefined || msg.alt === undefined || isNaN(msg.lat) || isNaN(msg.lon) || isNaN(msg.alt)) {
+      if (msg.lat === undefined || msg.lon === undefined || msg.alt === undefined) {
         return; 
       }
 
       if (!flightPaths[msg.id]) {
         flightPaths[msg.id] = {
-          id: msg.id,
-          callsign: 'UNKNOWN',
-          airline: 'UNKNOWN',
-          model: 'UNKNOWN',
-          registration: '---',
-          speed: '---',
-          track: '---',
-          v_rate: '---',
-          segments: [[]] 
+          id: msg.id, callsign: 'UNKNOWN', airline: 'UNKNOWN', model: 'UNKNOWN',
+          registration: '---', speed: '---', track: '---', v_rate: '---', segments: [[]]
         };
       }
 
@@ -548,12 +481,10 @@
       const newCoord = [msg.lon, msg.lat, adjustedAlt];
 
       let currentSegment = aircraft.segments[aircraft.segments.length - 1];
-      
       if (currentSegment.length === 0) {
         currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: msg.ts });
       } else {
         const lastPoint = currentSegment[currentSegment.length - 1];
-        
         if ((msg.ts - lastPoint.time) > 1800 * 1000) {
           aircraft.segments.push([{ pos: newCoord, rawAlt: msg.alt, time: msg.ts }]);
         } else {
@@ -568,62 +499,40 @@
       }
     }
 
-    function connectWebSocket() {
-      if (!BACKEND_URL) return;
-      
-      const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss://' : 'ws://';
-      const wsHost = BACKEND_URL.replace(/^https?:\/\//, '');
-      const wsUrl = `${wsProtocol}${wsHost}/ws`;
+    // 💡 WS_BASE を使用して正しいWebsocket接続先を設定
+    const ws = new WebSocket(`${WS_BASE}/ws`);
+    
+    ws.onmessage = (event) => {
+      // 💡 "connected" テキストを綺麗にスルーするガードを統合
+      if (event.data === "connected" || !event.data.startsWith("{")) {
+        console.log("通信確立:", event.data);
+        return;
+      }
+      const msg = JSON.parse(event.data);
+      processIncomingMessage(msg);
+    };
 
-      console.log(`📡 [WebSocket] 接続を開始します: ${wsUrl}`);
-      ws = new WebSocket(wsUrl);
-      
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        processIncomingMessage(msg);
-      };
-
-      ws.onerror = (error) => {
-        console.error("❌ [WebSocket] エラーが発生しました:", error);
-      };
-
-      ws.onclose = () => {
-        console.warn("⚠️ [WebSocket] 接続が切断されました。5秒後に再接続を試みます...");
-        setTimeout(connectWebSocket, 5000);
-      };
-    }
-
-    function renderRadarLayers() {
+    // ⏱️ メイン描画ループ
+    setInterval(() => {
       const now = Date.now();
-      const filterHours = (deviceMode === 'pc') ? currentTimespanHours : 24; 
-      const timeLimitIdx = filterHours * 60 * 60 * 1000; 
+      const timeLimitIdx = currentTimespanHours * 60 * 60 * 1000; 
 
       let activeSegmentsArray = [];
-
-      // ★iPhoneならタイムスパン（15分など）、iPad/PCなら最大24時間でメモリをクリアする
-      const memoryLimitMs = isIPhone ? (currentTimespanHours * 60 * 60 * 1000) : (24 * 60 * 60 * 1000);
 
       for (const id in flightPaths) {
         const aircraft = flightPaths[id];
         
-        // 1. 各飛行機の軌跡セグメントから、古いデータをフィルタリング
         aircraft.segments = aircraft.segments.map(segment => {
-          return segment.filter(pt => (now - pt.time) < memoryLimitMs);
-        }).filter(segment => segment.length > 0); 
+          return segment.filter(pt => (now - pt.time) < (24 * 60 * 60 * 1000));
+        }).filter(segment => segment.length > 0);
 
-        // 💡 iPhone専用：軌跡データが完全に空になった飛行機は、メモリ（ flightPaths ）から完全に抹消する
-        if (isIPhone && aircraft.segments.length === 0) {
-          delete flightPaths[id];
-          continue; // メモリから消したので、下の描画処理（forEach）はスキップして次の飛行機の処理へ
-        }
-
-        // 2. 画面に描画するための有効なセグメントを配列にプッシュする処理
         aircraft.segments.forEach(segment => {
-          const hasValidPoints = segment.some(pt => (now - pt.time) < timeLimitIdx);
-          if (hasValidPoints && segment.length > 1) {
+          const displayPoints = segment.filter(pt => (now - pt.time) <= timeLimitIdx);
+          
+          if (displayPoints.length > 1) {
             activeSegmentsArray.push({
-              id: aircraft.id, 
-              points: segment
+              id: aircraft.id,
+              points: displayPoints 
             });
           }
         });
@@ -656,18 +565,13 @@
         id: 'flight-paths-layer',
         data: activeSegmentsArray, 
         getPath: d => d.points.map(pt => pt.pos), 
-        // ★iPhoneなら不透明度をMAX（255 = 100%）に固定してGPUのブレンド計算負荷をカット！iPad/PCは元の224（半透明）
-        getColor: d => d.points.map(pt => {
-          const c = getColorByAltitude(pt.rawAlt);
-          if (isIPhone) c[3] = 255; 
-          return c;
-        }),
+        getColor: d => d.points.map(pt => getColorByAltitude(pt.rawAlt)), 
         widthUnits: 'pixels',     
-        getWidth: d => isIPhone ? 1.0 : (d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2.0) : ((currentLineWidth - 0.3) * 1.0)),
+        getWidth: d => d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2.0) : ((currentLineWidth - 0.3) * 1.0), 
         widthMinPixels: 0.1,      
         rounded: true,
         pickable: true, 
-        pickRadius: (isIPhone || isIPad) ? 40 : 30, 
+        pickRadius: 30, 
         parameters: { depthTest: false, depthMask: false },
         onClick: info => {
           if (info.object) {
@@ -680,18 +584,14 @@
         billboard: true,      
         miterLimit: 2,
         updateTriggers: {
-          getPath: [activeSegmentsArray, currentTimespanHours],
-          getColor: [activeSegmentsArray, currentTimespanHours],
+          getPath: [activeSegmentsArray],
+          getColor: [activeSegmentsArray],
           getWidth: [selectedAircraftId, currentLineWidth]
         }
       });
 
       deckOverlay.setProps({ layers: [pathLayer, airspaceLayer] });
-    }
-
-    // ⏰ 【リフレッシュレートの最適化】iPhoneのみ3秒、iPadやPCは1秒ごとに更新
-    const refreshInterval = isIPhone ? 3000 : 1000;
-    setInterval(renderRadarLayers, refreshInterval);
+    }, 1000);
 
     function switchDeviceMode(mode) {
       deviceMode = mode;
@@ -718,7 +618,9 @@
         }
       });
 
-      if (deviceMode === 'mobile') { loadHistoricalData(); }
+      if (deviceMode === 'mobile') { 
+        loadHistoricalData(); 
+      }
     }
 
     function updateLineWidth(val) {
@@ -750,18 +652,21 @@
       document.getElementById('airspace-opacity-val').innerText = val;
     }
 
+    // 方向リセット
     function resetToNorth() {
       const currentZoom = map.getZoom();
       const currentPitch = map.getPitch();
       map.easeTo({ bearing: 0, pitch: currentPitch, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
 
+    // トップビュー
     function setViewToTop() {
       const currentZoom = map.getZoom();
       const currentBearing = map.getBearing();
       map.easeTo({ pitch: 0, bearing: currentBearing, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
 
+    // 詳細表示
     function updateDetailPanel(hexId) {
       const aircraft = flightPaths[hexId];
       if (!aircraft) return;
@@ -777,7 +682,6 @@
       
       if (lastSegment && lastSegment.length > 0) {
         const lastPt = lastSegment[lastSegment.length - 1];
-        
         const altFt = Math.round(lastPt.rawAlt / 0.3048); 
         document.getElementById('det-alt').innerText = altFt.toLocaleString() + " ft";
         
