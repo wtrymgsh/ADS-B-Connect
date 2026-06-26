@@ -27,7 +27,7 @@
       font-size: 13px; font-weight: bold; letter-spacing: 0.5px; border-bottom: 1px solid #333;
     }
     .panel-header:hover { background: #444; }
-    .panel-content { padding: 15px; max-height: 80vh; overflow-y: auto; transition: max-height 0.4s; }
+    .panel-content { padding: 15px; max-height: 80vh; overflow-y: auto; transition: all 0.4s; }
     #control-panel.collapsed .panel-content { max-height: 0; padding-top: 0; padding-bottom: 0; border: none; }
     .toggle-icon { transition: transform 0.4s; font-size: 11px; color: #0076ff; }
     #control-panel.collapsed .toggle-icon { transform: rotate(180deg); }
@@ -196,14 +196,40 @@
 
     const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
+    // --- 自動折りたたみタイマーの設定 ---
+    let panelTimeout = null;
+    const AUTO_COLLAPSE_DELAY = 5000; // 折りたたむまでの時間（ミリ秒、5000 = 5秒）
+
+    // タイマーをリセットして再始動する関数
+    function resetPanelTimer() {
+      clearTimeout(panelTimeout);
+      
+      const panel = document.getElementById('control-panel');
+      // すでに折りたたまれている場合はタイマーを動かさない
+      if (panel.classList.contains('collapsed')) return;
+
+      panelTimeout = setTimeout(() => {
+        panel.classList.add('collapsed');
+      }, AUTO_COLLAPSE_DELAY);
+    }
+
+    // パネルの開閉切り替え
     function togglePanel() {
       const panel = document.getElementById('control-panel');
       panel.classList.toggle('collapsed');
+      
+      // パネルが開いた（collapsedクラスが外れた）ならタイマーを開始
+      if (!panel.classList.contains('collapsed')) {
+        resetPanelTimer();
+      } else {
+        clearTimeout(panelTimeout);
+      }
     }
 
     let map; 
 
     document.addEventListener("DOMContentLoaded", () => {
+      // --- ここに既存のマップ初期化コード ---
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -213,6 +239,21 @@
           pitch: 0,
           maxPitch: 85
       });
+
+      // ★★★ ここから追加：パネル内の操作イベントを監視 ★★★
+      const panel = document.getElementById('control-panel');
+      
+      // マウス移動、クリック、入力（スライダー操作）を検知してタイマーをリセット
+      ['mousemove', 'click', 'input'].forEach(eventType => {
+        panel.addEventListener(eventType, () => {
+          resetPanelTimer();
+        });
+      });
+
+      // 初期状態で開いている場合、最初のアクティブタイマーを起動
+      resetPanelTimer();
+
+
 
       // 💡 map.on('load') を async 化し、url.json を確実に読み込んでから通信を開始する形に統合
       map.on('load', async () => {
