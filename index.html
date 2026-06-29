@@ -4,11 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-  <title>Calgary YYC 3D Radar - External Version</title>
+  <title>Calgary YYC 3D Radar - Integrated Version</title>
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
 
   <style>
     body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: sans-serif; }
@@ -34,15 +37,36 @@
 
     .panel-section { margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 8px; }
     .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 3px; }
-    .btn-group { display: flex; gap: 4px; width: 100%; flex-wrap: wrap; }
+    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 1px; }
+    .btn-group { 
+      display: grid; 
+      grid-template-columns: repeat(3, 1fr); 
+      gap: 4px; 
+      width: 100%; 
+    }
     
     .btn {
-      flex: 1; min-width: 45px; background: #333; color: #fff; border: none; padding: 6px 0;
+      flex: 1; background: #333; color: #fff; border: none; padding: 4px 0;
       border-radius: 4px; cursor: pointer; font-size: 11px; transition: 0.2s; text-align: center;
     }
     .btn.active { background: #0076ff; font-weight: bold; }
     
+    .rwy-btn { 
+      width: 100%; 
+      margin-top: 0; 
+      background: #222; 
+      border: 1px solid #444; 
+      font-weight: normal; 
+    }
+    .rwy-btn.active { background: #0076ff; color: #fff; font-weight: bold; border-color: #0076ff; }
+
+    .btn.save-btn { 
+      background: #dc3545; color: #fff; font-weight: bold; font-size: 12px; 
+      margin: 5px auto 0 auto; padding: 5px 0; display: block; width: 75%; border-radius: 4px;
+    }
+    .btn.save-btn:hover { background: #bd2130; }
+    select { width: 100%; background: #333; color: #fff; border: 1px solid #555; padding: 6px; border-radius: 4px; font-size: 11px; }
+
     input[type=range] { width: 100%; cursor: pointer; }
 
     .control-btn {
@@ -55,24 +79,85 @@
     #compass-btn { top: 40px; }
     #topview-btn { top: 95px; }
     #yyc-btn { top: 150px; }
+    #yyc-btn.active { background: #0076ff; color: #fff; box-shadow: 0 0 15px rgba(0, 118, 255, 0.8); }
 
-    .control-btn:active {
+    .control-btn:active, #yyc-btn:active {
       background: #ff00ff !important; border-color: #ff00ff !important; color: #000000 !important;
       box-shadow: 0 0 15px #ff00ff !important; transition: none !important;
     }
     
+    #bottom-timeline-panel {
+      position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
+      width: 85vw; max-width: 1200px; z-index: 100;
+      box-sizing: border-box;
+      background: none !important;
+      border: none !important;
+      box-shadow: none !important;
+      opacity: 1.0 !important; 
+      padding: 25px 0 10px 0; 
+    }
+
+    #bottom-timeline-panel.hidden { display: none !important; }
+
+    .timeline-header-grid { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .timeline-title { font-size: 12px; font-weight: bold; color: #0076ff; letter-spacing: 1px; }
+    .timeline-selection-display {
+      font-size: 14px; font-weight: bold; color: #0076ff; background: rgba(0, 118, 255, 0.1);
+      padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(0, 118, 255, 0.3);
+    }
+    .slider-wrapper { padding: 0 10px; margin-bottom: 8px; }
+    
+    .timeline-edges { display: flex; justify-content: space-between; margin-top: 12px; }
+    .timeline-edges span { 
+      font-family: monospace; font-size: 14px; font-weight: bold; color: #ffffff;           
+      background: rgba(10, 10, 10, 0.7); padding: 4px 10px; border-radius: 4px;
+      border: 1px solid rgba(0, 118, 255, 0.2); box-shadow: 0 0 10px rgba(0, 118, 255, 0.2);
+      position: relative; margin-top: 0px; 
+    }
+
+    #label-left-time::before {
+      content: ''; position: absolute; top: -15px; left: 5px;       
+      border-width: 0 6px 15px 6px; border-style: solid;
+      border-color: transparent transparent rgba(10, 10, 10, 0.7) transparent; 
+      display: block; width: 0; height: 0;
+    }
+
+    #label-right-time::before {
+      content: ''; position: absolute; top: -15px; right: 5px;      
+      border-width: 0 6px 15px 6px; border-style: solid;
+      border-color: transparent transparent rgba(10, 10, 10, 0.7) transparent; 
+      display: block; width: 0; height: 0;
+    }
+    
+    #bottom-timeline-panel .noUi-target { background: #222; border: 1px solid #444; border-radius: 6px; height: 10px; }
+    #bottom-timeline-panel .noUi-connect { background: linear-gradient(90deg, #0056b3, #0076ff); }
+    #bottom-timeline-panel .noUi-handle {
+      width: 20px !important; height: 20px !important; right: -10px !important; top: -6px !important;
+      background: #0076ff; border: 2px solid #fff; border-radius: 4px;
+      box-shadow: 0 0 8px rgba(0,118,255,1); cursor: pointer; transition: transform 0.1s;
+    }
+    #bottom-timeline-panel .noUi-handle:hover { transform: scale(1.15); background: #248aff; }
+    #bottom-timeline-panel .noUi-handle:before, #bottom-timeline-panel .noUi-handle:after { display: none; }
+
+    #bottom-timeline-panel .noUi-tooltip {
+      display: block; background: #0076ff; color: #fff; border: 1px solid #fff; border-radius: 4px;
+      padding: 4px 8px; font-size: 12px; font-weight: bold; font-family: monospace; bottom: 24px; 
+      box-shadow: 0 0 8px rgba(0, 118, 255, 0.6); white-space: nowrap;
+    }
+    #bottom-timeline-panel .noUi-tooltip:after {
+      content: ''; position: absolute; border-width: 5px 5px 0; border-style: solid;
+      border-color: #0076ff transparent; display: block; width: 0; bottom: -5px; left: 50%; transform: translateX(-50%);
+    }
+
     #detail-panel {
       position: absolute; top: 210px; right: 20px; z-index: 100;
       background: rgba(20, 20, 20, 0.75); border-radius: 8px;
       color: #fff; width: 200px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      border: 1px solid rgba(0, 118, 255, 0.3);
-      display: none; 
+      border: 1px solid rgba(0, 118, 255, 0.3); display: none; 
     }
     .detail-header {
-      padding: 10px 15px; background: rgba(0, 118, 255, 0.2);
-      font-size: 13px; font-weight: bold; letter-spacing: 0.5px;
-      border-bottom: 1px solid rgba(0, 118, 255, 0.4);
-      display: flex; justify-content: space-between;
+      padding: 10px 15px; background: rgba(0, 118, 255, 0.2); font-size: 13px; font-weight: bold;
+      letter-spacing: 0.5px; border-bottom: 1px solid rgba(0, 118, 255, 0.4); display: flex; justify-content: space-between;
     }
     .detail-close { cursor: pointer; color: #aaa; }
     .detail-close:hover { color: #fff; }
@@ -118,25 +203,25 @@
     
     <div class="panel-content">
       <div class="panel-section">
-        <label>🔄 Time Range Selection</label>
-        <div class="btn-group">
-          <button id="btn-time-live" class="btn active" onclick="setTimeMode('live')">Live</button>
-          <button id="btn-time-1h" class="btn" onclick="setTimeMode('1h')">1h</button>
-          <button id="btn-time-3h" class="btn" onclick="setTimeMode('3h')">3h</button>
-          <button id="btn-time-6h" class="btn" onclick="setTimeMode('6h')">6h</button>
-          <button id="btn-time-12h" class="btn" onclick="setTimeMode('12h')">12h</button>
-          <button id="btn-time-24h" class="btn" onclick="setTimeMode('24h')">24h</button>
-        </div>
+        <label>📐 Line Thickness: <span id="width-val"></span></label>
+        <input type="range" id="width-slider" min="1" max="5" step="1" oninput="updateLineWidth(this.value)">
       </div>
 
       <div class="panel-section">
-        <label>📐 Line Thickness: <span id="width-val">1</span></label>
-        <input type="range" id="width-slider" min="1" max="5" step="1" value="1" oninput="updateLineWidth(this.value)">
-      </div>
-
-      <div class="panel-section">
-        <label>🌐 Trafic Control Zone: <span id="airspace-opacity-val">0</span>%</label>
+        <label>🌐 Control Zone: <span id="airspace-opacity-val">0</span>%</label>
         <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="0" oninput="updateAirspaceOpacity(this.value)">
+      </div>
+      
+      <div class="panel-section">
+        <label>🛬 Approch Path</label>
+        <div class="btn-group">
+          <button id="btn-rwy-17R" class="btn rwy-btn" onclick="toggleRunway('17R')">17R</button>
+          <button id="btn-rwy-17L" class="btn rwy-btn" onclick="toggleRunway('17L')">17L</button>
+          <button id="btn-rwy-11" class="btn rwy-btn" onclick="toggleRunway('11')">11</button>
+          <button id="btn-rwy-35L" class="btn rwy-btn" onclick="toggleRunway('35L')">35L</button>
+          <button id="btn-rwy-35R" class="btn rwy-btn" onclick="toggleRunway('35R')">35R</button>
+          <button id="btn-rwy-29" class="btn rwy-btn" onclick="toggleRunway('29')">29</button>
+        </div>
       </div>
 
       <div class="panel-section">
@@ -144,14 +229,45 @@
         <input type="range" id="exag-slider" min="0" max="8" step="1" value="4" oninput="updateExaggeration(this.value)">
       </div>
 
-      <div class="panel-section" style="padding-bottom: 0; border-bottom: none;">
+      <div class="panel-section">
         <label>🗺️ Map Style</label>
         <div class="btn-group">
-          <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Dark</button>
-          <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Light</button>
+          <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Cyber</button>
+          <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Backdrop</button>
           <button id="style-satellite" class="btn" onclick="switchMapStyle('satellite')">Satellite</button>
         </div>
       </div>
+      
+      <div class="panel-section">
+        <label>🔄 Display Mode</label>
+        <div class="btn-group">
+          <button id="btn-mode-live" class="btn active" onclick="switchViewMode('live')">Live<br>Traffic</button>
+          <button id="btn-mode-rt" class="btn" onclick="switchViewMode('realtime')">Current<br>Log</button>
+          <button id="btn-mode-arch" class="btn" onclick="switchViewMode('archive')">Saved<br>Log</button>
+        </div>
+      </div>
+
+      <div class="panel-section" id="archive-select-section" style="display: none;">
+        <label>📁 Select Saved Arh</label>
+        <select id="archive-list" onchange="loadSelectedArchive(this.value)">
+          <option value="">-- Select Archive --</option>
+        </select>
+      </div>
+
+      <div class="panel-section" style="padding-bottom: 0; border-bottom: none;">
+        <button id="save-snapshot-btn" class="btn save-btn" onclick="saveCurrentTimespan()">Save This Time Span</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottom-timeline-panel">
+    <div class="slider-wrapper">
+      <div id="timespan-range-slider"></div>
+    </div>
+    
+    <div class="timeline-edges">
+      <span id="label-left-time">-24h</span>
+      <span id="label-right-time">now</span>
     </div>
   </div>
 
@@ -162,12 +278,25 @@
     let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
 
-    // 💡 url.json から動的に上書きするための通信ベースURL用変数
-    let IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || window.location.hostname.includes('cloudflare');
-    let HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
-    let WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
-    
-    let ws = null; // WebSocket用のグローバル変数
+    let YYC_RUNWAYS = [
+      { id: '11',  center: [-114.03646743029697, 51.126731789097676], heading: 120.142261, active: false, color: [0, 255, 0] },
+      { id: '29',  center: [-114.0063297003938, 51.11574234044246], heading: 360-59.857738, active: false, color: [0, 255, 0] },
+      { id: '17R', center: [-114.02133463605998, 51.13139889952143], heading: 180, active: false, color: [0, 255, 0] },
+      { id: '35L', center: [-114.0213797307343, 51.09665392784393], heading: 0, active: false, color: [0, 255, 0] },
+      { id: '17L', center: [-113.9903239279564, 51.1485966715133], heading: 180, active: false, color: [0, 255, 0] },
+      { id: '35R', center: [-113.99037210622825, 51.110237118893124], heading: 0, active: false, color: [0, 255, 0] }
+    ];
+
+    // ★★★ 【自動判定ロジックの強化】 ★★★
+    // 開いているホスト名を取得
+    const currentHost = window.location.hostname;
+    // ローカル判定（localhost、Macの開発用IP、実機UbuntuのIP、またはローカルファイル直接起動の場合）
+    const IS_LOCAL_MODE = !currentHost || currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '192.168.1.99' || currentHost === '192.168.1.124';
+
+    // 通信先ベースURLの初期化
+    let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
+    let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
+    let ws = null; // WebSocket用インスタンス保持用
 
     const STYLES = {
       cyber: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
@@ -182,54 +311,154 @@
             attribution: 'Tiles &copy; Esri'
           }
         },
-        layers: [{ id: 'esri-satellite-layer', type: 'raster', source: 'esri-satellite', minzoom: 0, maxzoom: 20 }]
+        layers: [
+          { id: 'esri-satellite-layer', type: 'raster', source: 'esri-satellite', minzoom: 0, maxzoom: 20 }
+        ]
       }
     };
 
     let currentStyleName = 'backdrop'; 
-    let currentLineWidth = 1;       
+    let currentLineWidth = 1; 
+    let sliderStartHours = -12.0; 
+    let sliderEndHours = 0.0; 
+    const MASTER_START_HOURS = sliderStartHours;
+
     let viewMode = 'live'; 
-    let currentHoursParam = 0; 
+    let currentArchiveData = []; 
+    
+    let liveFlightPaths = {};     
+    let archiveFlightPaths = {};  
+    let flightPaths = liveFlightPaths; 
 
-    let flightPaths = {};
     let selectedAircraftId = null;
+    document.addEventListener("DOMContentLoaded", () => {
+      const widthSlider = document.getElementById('width-slider');
+      const widthVal = document.getElementById('width-val');
+      if (widthSlider && widthVal) {
+        widthSlider.value = currentLineWidth;
+        widthVal.innerText = currentLineWidth;
+      }
+    });
 
-    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
-
-    // --- 自動折りたたみタイマーの設定 ---
-    let panelTimeout = null;
-    const AUTO_COLLAPSE_DELAY = 5000; // 折りたたむまでの時間（ミリ秒、5000 = 5秒）
-
-    // タイマーをリセットして再始動する関数
-    function resetPanelTimer() {
-      clearTimeout(panelTimeout);
+    function formatToCalgaryTime(timestamp) {
+      if (timestamp < 10000000000) timestamp *= 1000;
+      const date = new Date(timestamp);
+      const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+      const month = date.getUTCMonth() + 1;
+      const calgaryOffsetHours = (month >= 3 && month <= 11) ? -6 : -7;
+      const calgaryDate = new Date(utc + (3600000 * calgaryOffsetHours));
       
-      const panel = document.getElementById('control-panel');
-      // すでに折りたたまれている場合はタイマーを動かさない
-      if (panel.classList.contains('collapsed')) return;
-
-      panelTimeout = setTimeout(() => {
-        panel.classList.add('collapsed');
-      }, AUTO_COLLAPSE_DELAY);
+      const hh = String(calgaryDate.getHours()).padStart(2, '0');
+      const mm = String(calgaryDate.getMinutes()).padStart(2, '0');
+      const ss = String(calgaryDate.getSeconds()).padStart(2, '0');
+      
+      return `${hh}:${mm}:${ss}`;
     }
 
-    // パネルの開閉切り替え
+    const rangeSlider = document.getElementById('timespan-range-slider');
+    noUiSlider.create(rangeSlider, {
+        start: [sliderStartHours, sliderEndHours], 
+        connect: true,
+        step: 0.25, 
+        tooltips: [true, true], 
+        range: { 'min': -24, 'max': 0 },
+        format: {
+            to: function (value) {
+                let baseTime = Date.now();
+                if (viewMode === 'archive' && currentArchiveData.length > 0) {
+                    baseTime = Math.max(...currentArchiveData.map(d => d.ts));
+                    if (baseTime < 10000000000) baseTime *= 1000;
+                }
+                const timeStamp = baseTime + (value * 60 * 60 * 1000);
+                return formatToCalgaryTime(timeStamp);
+            },
+            from: function (value) { return Number(value); }
+        }
+    });
+
+    rangeSlider.noUiSlider.on('update', function (values, handle, unencoded) {
+        sliderStartHours = parseFloat(unencoded[0]);
+        sliderEndHours = parseFloat(unencoded[1]);
+        updateAbsoluteTimeLabels();
+    });
+
+    function updateAbsoluteTimeLabels() {
+      if (!rangeSlider || !rangeSlider.noUiSlider) return;
+
+      let baseTime = Date.now();
+      if (viewMode === 'archive' && currentArchiveData.length > 0) {
+        baseTime = Math.max(...currentArchiveData.map(d => d.ts));
+        if (baseTime < 10000000000) baseTime *= 1000;
+      }
+
+      const leftEdgeTimeStamp = baseTime - (24 * 60 * 60 * 1000);
+
+      let rightLabelText = "";
+      if (viewMode === 'live' || viewMode === 'realtime') {
+        rightLabelText = `Now: ${formatToCalgaryTime(baseTime)}`;
+      } else {
+        const d = new Date(baseTime);
+        const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
+        const monthForOffset = d.getUTCMonth() + 1;
+        const calgaryOffsetHours = (monthForOffset >= 3 && monthForOffset <= 11) ? -6 : -7;
+        const calvaryDate = new Date(utc + (3600000 * calgaryOffsetHours));
+
+        const yyyy = calvaryDate.getFullYear();                         
+        const mm = String(calvaryDate.getMonth() + 1).padStart(2, '0'); 
+        const dd = String(calvaryDate.getDate()).padStart(2, '0');    
+        
+        rightLabelText = `${yyyy}/${mm}/${dd} ${formatToCalgaryTime(baseTime)}`;
+      }
+
+      document.getElementById('label-left-time').innerText = `-24h: ${formatToCalgaryTime(leftEdgeTimeStamp)}`;
+      document.getElementById('label-right-time').innerText = rightLabelText;
+    }
+
+    let panelTimeout = null;
+    const AUTO_COLLAPSE_DELAY = 5000;
+
+    function resetPanelTimer() {
+      clearTimeout(panelTimeout);
+      const panel = document.getElementById('control-panel');
+      if (panel.classList.contains('collapsed')) return;
+      panelTimeout = setTimeout(() => { panel.classList.add('collapsed'); }, AUTO_COLLAPSE_DELAY);
+    }
+
     function togglePanel() {
       const panel = document.getElementById('control-panel');
       panel.classList.toggle('collapsed');
-      
-      // パネルが開いた（collapsedクラスが外れた）ならタイマーを開始
-      if (!panel.classList.contains('collapsed')) {
-        resetPanelTimer();
-      } else {
-        clearTimeout(panelTimeout);
-      }
+      if (!panel.classList.contains('collapsed')) { resetPanelTimer(); } else { clearTimeout(panelTimeout); }
     }
 
     let map; 
 
-    document.addEventListener("DOMContentLoaded", () => {
-      // --- ここに既存のマップ初期化コード ---
+    // ★★★ 【非同期初期化処理】外部モードなら url.json を待ってから通信開始 ★★★
+    document.addEventListener("DOMContentLoaded", async () => {
+      // 1. 外部アクセスモードの場合は、まず url.json を取得
+      if (!IS_LOCAL_MODE) {
+        try {
+          console.log("🌐 External Mode: Fetching dynamic endpoint from url.json...");
+          const res = await fetch('url.json');
+          const config = await res.json();
+          if (config.url) {
+            // 末尾のスラッシュを除去してベースURLを設定
+            const cleanUrl = config.url.replace(/\/$/, "");
+            HTTP_BASE = cleanUrl;
+            WS_BASE = cleanUrl.replace(/^http/, "ws");
+            console.log(`✅ Endpoints updated: HTTP->${HTTP_BASE}, WS->${WS_BASE}`);
+          }
+        } catch (e) {
+          console.error("❌ Failed to load url.json. Falling back to relative routing.", e);
+          // 万が一失敗した場合は同じドメインを基準にする
+          HTTP_BASE = window.location.origin;
+          WS_BASE = window.location.origin.replace(/^http/, "ws");
+        }
+      }
+
+      // 2. WebSocketの初期化
+      initWebSocket();
+
+      // 3. マップ初期化
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -240,47 +469,39 @@
           maxPitch: 85
       });
 
-      // ★★★ ここから追加：パネル内の操作イベントを監視 ★★★
       const panel = document.getElementById('control-panel');
-      
-      // マウス移動、クリック、入力（スライダー操作）を検知してタイマーをリセット
       ['mousemove', 'click', 'input'].forEach(eventType => {
-        panel.addEventListener(eventType, () => {
-          resetPanelTimer();
-        });
+        panel.addEventListener(eventType, () => { resetPanelTimer(); });
       });
 
-      // 初期状態で開いている場合、最初のアクティブタイマーを起動
       resetPanelTimer();
 
-
-
-      // 💡 map.on('load') を async 化し、url.json を確実に読み込んでから通信を開始する形に統合
-      map.on('load', async () => {
+      map.on('load', () => {
           applyStyleSettings();
-
-          try {
-            console.log("📂 url.json を読み込み中...");
-            const urlRes = await fetch('url.json?t=' + Date.now());
-            const urlData = await urlRes.json();
-            
-            if (urlData.backend_url) {
-              HTTP_BASE = urlData.backend_url;
-              // HTTPのプロトコルをWebSocket用に置換
-              WS_BASE = urlData.backend_url.replace('http://', 'ws://').replace('https://', 'wss://');
-              console.log("📢 通信先が確定しました ➡️", HTTP_BASE);
-            }
-          } catch (e) {
-            console.error("⚠️ url.jsonのロードに失敗したため、初期設定値で動作します:", e);
-          }
-
-          // URLの決定後に履歴取得モードとWebSocket接続をキック
-          setTimeMode('live'); 
-          connectWebSocket();
-
+          switchViewMode(viewMode);
+          loadInitialHistoricalData();
+          loadArchiveList(); 
           map.addControl(deckOverlay);
       });
     });
+
+    // WebSocket接続管理関数
+    function initWebSocket() {
+      if (!WS_BASE) return;
+      console.log(`🔌 Connecting to WebSocket: ${WS_BASE}/ws`);
+      ws = new WebSocket(`${WS_BASE}/ws`);
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        processIncomingMessageToTarget(msg, liveFlightPaths);
+      };
+      ws.onclose = () => {
+        console.log("⚠️ WebSocket closed. Reconnecting in 5s...");
+        setTimeout(initWebSocket, 5000);
+      };
+      ws.onerror = (err) => {
+        console.error("❌ WebSocket error:", err);
+      };
+    }
 
     function toggleYycLock() {
       map.easeTo({ center: YYC_CENTER, duration: 800, cubicBezier: [0.25, 1, 0.5, 1], essential: true });
@@ -311,7 +532,7 @@
 
     const deckOverlay = new deck.MapboxOverlay({ 
       layers: [],
-      onClick: (info) => { if (!info.object) closeDetailPanel(); }
+      onClick: (info) => { if (!info.object) { closeDetailPanel(); } }
     });
 
     function getColorByAltitude(rawAlt) {
@@ -325,6 +546,43 @@
         224
       ];
     }
+
+    function generateApproachLine(rwy, exag) {
+      const startLon = rwy.center[0];
+      const startLat = rwy.center[1];
+      const airportElevationMeters = 1084+60; 
+      const reverseHeadingRad = ((rwy.heading + 180) % 360) * Math.PI / 180;
+      const distanceMeters = 10*1852; 
+      const glideSlopeClimbMeters = distanceMeters * Math.sin(3 * Math.PI / 180);
+      const finalAltitudeMeters = airportElevationMeters + glideSlopeClimbMeters;
+
+      const latLengthPerDegree = 111320;
+      const lonLengthPerDegree = 40075000 * Math.cos(startLat * Math.PI / 180) / 360;
+
+      const endLon = startLon + (Math.sin(reverseHeadingRad) * distanceMeters / lonLengthPerDegree);
+      const endLat = startLat + (Math.cos(reverseHeadingRad) * distanceMeters / latLengthPerDegree);
+
+      return [
+        [startLon, startLat, airportElevationMeters * exag],
+        [endLon, endLat, finalAltitudeMeters * exag]
+      ];
+    }
+
+    function toggleRunway(id) {
+      const rwy = YYC_RUNWAYS.find(r => r.id === id);
+      if (rwy) {
+        rwy.active = !rwy.active;
+        document.getElementById(`btn-rwy-${id}`).classList.toggle('active', rwy.active);
+        YYC_RUNWAYS = [...YYC_RUNWAYS]; 
+      }
+    }
+
+    const YYC_CONTROL_ZONE = [
+      { name: "Control Zone", radius: 5*1852, rawElevation: 1084, rawCeiling: 3000*0.3048, color: [0, 118, 255] },
+      { name: "TCA Inner", radius: 15*1852, rawElevation: 4800*0.3048, rawCeiling: (12500-4800)*0.3048, color: [230, 50, 50] },
+      { name: "TCA Middle", radius: 20*1852, rawElevation: 5500*0.3048, rawCeiling: (12500-5500)*0.3048, color: [230, 120, 50] },
+      { name: "TCA Outer", radius: 30*1852, rawElevation: 8000*0.3048, rawCeiling: (12500-8000)*0.3048, color: [230, 200, 50] }
+    ];
 
     function generateAirspaceCircle(center, radiusMeters, rawElevation, pointsCount = 64) {
       const coordinates = [];
@@ -342,76 +600,52 @@
       return coordinates;
     }
 
-    const YYC_CONTROL_ZONE = [
-      { name: "Control Zone", radius: 12964, rawElevation: 1084, rawCeiling: 928, color: [0, 118, 255] },
-      { name: "TCA Inner", radius: 27780, rawElevation: 1463, rawCeiling: 4023, color: [230, 50, 50] },
-      { name: "TCA Middle", radius: 37040, rawElevation: 1676, rawCeiling: 3810, color: [230, 120, 50] },
-      { name: "TCA Outer", radius: 55560, rawElevation: 2438, rawCeiling: 3048, color: [230, 200, 50] }
-    ];
-
-    async function setTimeMode(mode) {
-      ['live', '1h', '3h', '6h', '12h', '24h'].forEach(m => {
-        const btn = document.getElementById(`btn-time-${m}`);
-        if (btn) btn.classList.remove('active');
-      });
-      const currentBtn = document.getElementById(`btn-time-${mode}`);
-      if (currentBtn) currentBtn.classList.add('active');
-      
-      flightPaths = {};
-      closeDetailPanel();
-
-      if (mode === 'live') {
-        viewMode = 'live';
-        currentHoursParam = 24; 
-
-        if (isMobile) {
-          console.log("📱 Mobile device detected. Live Traffic initial history fetch skipped for performance.");
-        } else {
-          await loadHistoricalData(24);
-        }
-      } else {
-        viewMode = 'history';
-        currentHoursParam = parseInt(mode.replace('h', ''));
-        await loadHistoricalData(currentHoursParam);
-      }
-    }
-
-    // 💡 動的に書き換わった HTTP_BASE を用いて履歴データをフェッチするように修正
-    async function loadHistoricalData(hours) {
+    async function loadInitialHistoricalData() {
+      if (!HTTP_BASE) return;
       try {
-        console.log(`⏳ Loading ${hours} hours of history from server...`);
-        const response = await fetch(`${HTTP_BASE}/api/history?hours=${hours}`);
+        console.log(`⏳ Loading 24 hours of history from server...`);
+        const response = await fetch(`${HTTP_BASE}/api/history?hours=24`);
         const data = await response.json();
         
-        flightPaths = {};
-        data.forEach(msg => { processIncomingMessage(msg); });
-        console.log(`✅ History loaded. Unique aircrafts: ${Object.keys(flightPaths).length}`);
+        liveFlightPaths = {};
+        data.forEach(msg => { 
+          processIncomingMessageToTarget(msg, liveFlightPaths); 
+        });
+        console.log(`✅ History loaded. Total unique aircrafts: ${Object.keys(liveFlightPaths).length}`);
+        
+        if(viewMode === 'live' || viewMode === 'realtime') {
+          flightPaths = liveFlightPaths;
+        }
       } catch (e) {
         console.error("❌ Failed to load historical data:", e);
       }
     }
 
-    function processIncomingMessage(msg) {
-      if (!flightPaths[msg.id]) {
-        flightPaths[msg.id] = {
+    function processIncomingMessageToTarget(msg, targetObject) {
+      if (!targetObject[msg.id]) {
+        targetObject[msg.id] = {
           id: msg.id, callsign: 'UNKNOWN', airline: 'UNKNOWN', model: 'UNKNOWN',
           registration: '---', speed: '---', track: '---', v_rate: '---', segments: [[]] 
         };
       }
 
-      const aircraft = flightPaths[msg.id];
+      const aircraft = targetObject[msg.id];
+
       if (msg.airline) aircraft.airline = msg.airline;
       if (msg.model) aircraft.model = msg.model;
       if (msg.registration) aircraft.registration = msg.registration;
       if (msg.callsign) aircraft.callsign = msg.callsign;
       if (msg.speed !== undefined) aircraft.speed = Math.round(msg.speed) + " kt";
       if (msg.track !== undefined) aircraft.track = Math.round(msg.track) + "°";
-      if (msg.v_rate !== undefined) aircraft.v_rate = (msg.v_rate > 0 ? "+" : "") + msg.v_rate + " ft/min";
+      if (msg.v_rate !== undefined) {
+        aircraft.v_rate = (msg.v_rate > 0 ? "+" : "") + msg.v_rate + " ft/min";
+      }
 
       if (msg.lat !== undefined && msg.lon !== undefined) {
-        let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
+        const altInMeters = msg.alt * 0.3048;
+        let adjustedAlt = altInMeters * EXAGGERATION_FACTOR; 
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
-        
+              
         let correctTs = Number(msg.ts);
         if (correctTs < 10000000000) correctTs *= 1000;
 
@@ -437,47 +671,189 @@
         }
       }
 
-      if (selectedAircraftId === msg.id) updateDetailPanel(msg.id);
+      if (selectedAircraftId === msg.id && flightPaths === targetObject) {
+        updateDetailPanel(msg.id);
+      }
     }
 
-    // 💡 動的に書き換わった WS_BASE を用いてWebSocketに接続する関数を統合
-    function connectWebSocket() {
-      if (!WS_BASE) return;
+    function switchViewMode(mode) {
+      viewMode = mode;
       
-      const targetUrl = WS_BASE.endsWith('/') ? `${WS_BASE}ws` : `${WS_BASE}/ws`;
-      console.log("📡 WebSocketに接続を試みます ➡️", targetUrl);
+      document.getElementById('btn-mode-live').classList.toggle('active', mode === 'live');
+      document.getElementById('btn-mode-rt').classList.toggle('active', mode === 'realtime');
+      document.getElementById('btn-mode-arch').classList.toggle('active', mode === 'archive');
       
-      ws = new WebSocket(targetUrl);
-      
-      ws.onmessage = (event) => {
-        if (event.data === "connected" || !event.data.startsWith("{")) {
-          console.log("通信確立:", event.data);
-          return;
-        }
-        const msg = JSON.parse(event.data);
-        processIncomingMessage(msg);
-      };
+      document.getElementById('archive-select-section').style.display = (mode === 'archive') ? 'block' : 'none';
+      document.getElementById('save-snapshot-btn').style.display = (mode === 'realtime') ? 'block' : 'none';
 
-      ws.onerror = (e) => console.error("❌ WebSocket接続中にエラーが発生しました:", e);
-      ws.onclose = () => console.log("🔒 WebSocketが切断されました。");
+      const timelinePanel = document.getElementById('bottom-timeline-panel');
+      if (mode === 'live') {
+        timelinePanel.classList.add('hidden');
+      } else {
+        timelinePanel.classList.remove('hidden');
+      }
+
+      closeDetailPanel();
+      
+      if (mode === 'realtime' || mode === 'live') { 
+        flightPaths = liveFlightPaths; 
+        sliderStartHours = MASTER_START_HOURS;
+        sliderEndHours = 0.0;
+
+        rangeSlider.noUiSlider.updateOptions({
+          range: { 'min': -24, 'max': 0 },
+          padding: [0, 0],
+          start: [sliderStartHours, sliderEndHours] 
+        });
+        updateAbsoluteTimeLabels();
+      } else {
+        archiveFlightPaths = {};
+        flightPaths = archiveFlightPaths;
+        currentArchiveData = [];
+        deckOverlay.setProps({ layers: [] });
+        rangeSlider.noUiSlider.updateOptions({
+          range: { 'min': -24, 'max': 0 },
+          padding: [0, 0],
+          start: [0, 0]
+        });
+        sliderStartHours = 0.0;
+        sliderEndHours = 0.0;
+        updateAbsoluteTimeLabels();
+      }
+    }
+    
+    async function saveCurrentTimespan() {
+      if (viewMode !== 'realtime' || !HTTP_BASE) return;
+      
+      let baseTime = Date.now();
+      const startTimeStr = formatToCalgaryTime(baseTime + (sliderStartHours * 60 * 60 * 1000));
+      const endTimeStr = formatToCalgaryTime(baseTime + (sliderEndHours * 60 * 60 * 1000));
+
+      const confirmSave = confirm(`カルガリー時間 [ ${startTimeStr} 〜 ${endTimeStr} ] のスパンをサーバーに保存しますか？`);
+      if (!confirmSave) return;
+
+      try {
+        const response = await fetch(`${HTTP_BASE}/api/archive/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start_hours: sliderStartHours, end_hours: sliderEndHours })
+        });
+        const resData = await response.json();
+        if (resData.status === 'success') {
+          alert(`✅ 保存に成功しました！\nファイル名: ${resData.filename}`);
+          loadArchiveList(); 
+        } else {
+          alert(`❌ 保存失敗: ${resData.message}`);
+        }
+      } catch (e) {
+        alert(`❌ サーバー接続エラー: ${e}`);
+      }
+    }
+
+    async function loadArchiveList() {
+      if (!HTTP_BASE) return;
+      try {
+        const response = await fetch(`${HTTP_BASE}/api/archive/list`);
+        const list = await response.json();
+        const select = document.getElementById('archive-list');
+        
+        select.innerHTML = '<option value="">-- アーカイブを選択 --</option>';
+        list.forEach(filename => {
+          const option = document.createElement('option');
+          option.value = filename;
+          option.innerText = filename.replace('archive_', '').replace('.json', '');
+          select.appendChild(option);
+        });
+      } catch (e) {
+        console.error("❌ アーカイブ一覧の取得に失敗しました:", e);
+      }
+    }
+
+    async function loadSelectedArchive(filename) {
+      if (!filename || !HTTP_BASE) return;
+      try {
+        console.log(`⏳ Loading archive file: ${filename}...`);
+        const response = await fetch(`${HTTP_BASE}/api/archive/download?filename=${filename}`);
+        currentArchiveData = await response.json();
+        
+        archiveFlightPaths = {}; 
+        currentArchiveData.forEach(msg => { 
+          processIncomingMessageToTarget(msg, archiveFlightPaths); 
+        });
+        flightPaths = archiveFlightPaths; 
+        console.log(`✅ Archive parsed. Total paths: ${Object.keys(flightPaths).length}`);
+        
+        if (currentArchiveData.length > 0) {
+          const timestamps = currentArchiveData.map(d => d.ts);
+          let maxTs = Math.max(...timestamps);
+          if (maxTs < 10000000000) maxTs *= 1000;
+          let minTs = Math.min(...timestamps);
+          if (minTs < 10000000000) minTs *= 1000;
+          
+          const durationHours = (maxTs - minTs) / (1000 * 60 * 60);
+          const forbiddenHours = Math.max(24.0 - durationHours, 0);
+          const safeStartPos = -Math.min(Math.max(durationHours, 0.1666), 24.0);
+
+          rangeSlider.noUiSlider.updateOptions({
+            range: { 'min': -24, 'max': 0 },
+            padding: [forbiddenHours, 0],
+            start: [safeStartPos, 0]
+          });
+          sliderStartHours = safeStartPos;
+          sliderEndHours = 0.0;
+        }
+        
+        updateAbsoluteTimeLabels();
+      } catch (e) {
+        console.error("❌ 過去ログの読み込みに失敗しました:", e);
+      }
     }
 
     // ⏱️ メイン描画ループ
     setInterval(() => {
-      const baseTime = Date.now();
-      const hoursToFilter = (viewMode === 'live') ? 24 : currentHoursParam;
-      const timeLimitStart = baseTime - (hoursToFilter * 60 * 60 * 1000);
-      const timeLimitEnd = baseTime + 10 * 1000;
+      let baseTime = Date.now();
+      
+      if (viewMode === 'archive') {
+        if (currentArchiveData.length === 0) return;
+        let maxTs = Math.max(...currentArchiveData.map(d => d.ts));
+        if (maxTs < 10000000000) maxTs *= 1000;
+        baseTime = maxTs;
+      } else {
+        updateAbsoluteTimeLabels();
+
+        if (rangeSlider && rangeSlider.noUiSlider) {
+          const currentValues = rangeSlider.noUiSlider.get(true);
+          sliderStartHours = currentValues[0];
+          sliderEndHours = currentValues[1];
+        }
+
+        const tooltips = rangeSlider.querySelectorAll('.noUi-tooltip');
+        if (tooltips.length === 2) {
+          const startTimeStamp = baseTime + (sliderStartHours * 60 * 60 * 1000);
+          const endTimeStamp = baseTime + (sliderEndHours * 60 * 60 * 1000);
+          tooltips[0].innerText = formatToCalgaryTime(startTimeStamp);
+          tooltips[1].innerText = formatToCalgaryTime(endTimeStamp);
+        }
+      }
+
+      const timeLimitStart = (viewMode === 'live') ? (baseTime - 24 * 60 * 60 * 1000) : (baseTime + (sliderStartHours * 60 * 60 * 1000));
+      const timeLimitEnd = (viewMode === 'live') ? (baseTime + 10 * 1000) : (baseTime + (sliderEndHours * 60 * 60 * 1000));
 
       let activePathsArray = [];
       let currentPositionsArray = []; 
 
-      for (const id in flightPaths) {
-        const aircraft = flightPaths[id];
-        
-        aircraft.segments = aircraft.segments.map(segment => {
+      for (const id in liveFlightPaths) {
+        liveFlightPaths[id].segments = liveFlightPaths[id].segments.map(segment => {
           return segment.filter(pt => (Date.now() - pt.time) < (24 * 60 * 60 * 1000));
         }).filter(segment => segment.length > 0);
+        
+        if (liveFlightPaths[id].segments.length === 0) {
+          delete liveFlightPaths[id];
+        }
+      }
+
+      for (const id in flightPaths) {
+        const aircraft = flightPaths[id];
 
         let lastPt = null;
         if (aircraft.segments.length > 0) {
@@ -491,7 +867,9 @@
         }
 
         if (viewMode === 'live') {
-          if (!lastPt || (Date.now() - lastPt.time) > 180 * 1000) continue; 
+          if (!lastPt || (Date.now() - lastPt.time) > 180 * 1000) {
+            continue; 
+          }
           
           const lon = Number(lastPt.pos[0]);
           const lat = Number(lastPt.pos[1]);
@@ -506,24 +884,38 @@
               angle: isNaN(headingAngle) ? 0 : headingAngle   
             });
           }
-        }
 
-        aircraft.segments.forEach(segment => {
-          const displayPoints = segment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
-
-          if (displayPoints.length > 1) {
-            activePathsArray.push({
-              id: id,
-              path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
-              rawAltitudes: displayPoints.map(pt => pt.rawAlt)
-            });
+          const latestSegment = aircraft.segments[aircraft.segments.length - 1];
+          if (latestSegment) {
+            const displayPoints = latestSegment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
+            if (displayPoints.length > 1) {
+              activePathsArray.push({
+                id: id,
+                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
+                rawAltitudes: displayPoints.map(pt => pt.rawAlt)
+              });
+            }
           }
-        });
+        } 
+        else {
+          aircraft.segments.forEach(segment => {
+            const displayPoints = segment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
+
+            if (displayPoints.length > 1) {
+              activePathsArray.push({
+                id: id,
+                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
+                rawAltitudes: displayPoints.map(pt => pt.rawAlt)
+              });
+            }
+          });
+        }
       }
 
+      const airspaceData = (typeof YYC_CONTROL_ZONE !== 'undefined') ? YYC_CONTROL_ZONE : [];
       const airspaceLayer = new deck.PolygonLayer({
         id: 'yyc-airspace-layer',
-        data: YYC_CONTROL_ZONE,
+        data: airspaceData,
         getPolygon: d => generateAirspaceCircle(YYC_CENTER, d.radius, d.rawElevation * EXAGGERATION_FACTOR),
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
         extruded: true,                                    
@@ -588,7 +980,7 @@
         getLineWidth: d => d.id === selectedAircraftId ? 3 : 1.5, 
         lineWidthUnits: 'pixels',
         pickable: true,
-        parameters: { depthTest: false, depthMask: false, blend: true }, 
+        parameters: { depthTest: false, depthMask: false, blend: true },
         onClick: info => {
           if (info.object) {
             selectedAircraftId = info.object.id; 
@@ -602,14 +994,39 @@
         }
       });
 
-      deckOverlay.setProps({ layers: [pathLayer, airspaceLayer, markerLayer] });
+      const activeRunwaysData = YYC_RUNWAYS.filter(rwy => rwy.active);
+      
+      const runwayLayer = new deck.PathLayer({
+        id: 'yyc-runway-approach-layer',
+        data: activeRunwaysData,
+        getPath: d => generateApproachLine(d, EXAGGERATION_FACTOR), 
+        getColor: d => [...d.color, 154], 
+        widthUnits: 'meters',
+        getWidth: 200,
+        jointRounded: true,
+        capRounded: true,
+        pickable: false,
+        parameters: { 
+          depthTest: false, 
+          depthMask: false 
+        },
+        updateTriggers: {
+          getPath: [EXAGGERATION_FACTOR]
+        }
+      });
 
-    }, 1000); 
+      if (typeof deckOverlay !== 'undefined') {
+        deckOverlay.setProps({ 
+          layers: [pathLayer, airspaceLayer, markerLayer, runwayLayer] 
+        });
+      }
+
+    }, 1000);
 
     function updateLineWidth(val) {
       currentLineWidth = parseFloat(val);
       document.getElementById('width-val').innerText = val;
-      if (typeof deckOverlay !== 'undefined') deckOverlay.setProps({}); 
+      if (typeof deckOverlay !== 'undefined') { deckOverlay.setProps({}); }
     }
 
     function updateExaggeration(val) {
@@ -626,11 +1043,15 @@
     }
 
     function resetToNorth() {
-      map.easeTo({ bearing: 0, pitch: map.getPitch(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+      const currentZoom = map.getZoom();
+      const currentPitch = map.getPitch();
+      map.easeTo({ bearing: 0, pitch: currentPitch, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
 
     function setViewToTop() {
-      map.easeTo({ pitch: 0, bearing: map.getBearing(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+      const currentZoom = map.getZoom();
+      const currentBearing = map.getBearing();
+      map.easeTo({ pitch: 0, bearing: currentBearing, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
   
     function updateDetailPanel(hexId) {
@@ -655,8 +1076,13 @@
         const isLost = (Date.now() - correctTime) > 30000;
         const statusEl = document.getElementById('det-status');
         
-        statusEl.innerText = isLost ? "🚨 LOST CONTACT" : "🟢 ACTIVE";
-        statusEl.className = isLost ? "detail-value status-lost" : "detail-value status-active";
+        if (viewMode === 'archive') {
+          statusEl.innerText = "📁 ARCHIVE";
+          statusEl.className = "detail-value";
+        } else {
+          statusEl.innerText = isLost ? "🚨 LOST CONTACT" : "🟢 ACTIVE";
+          statusEl.className = isLost ? "detail-value status-lost" : "detail-value status-active";
+        }
       } else {
         document.getElementById('det-alt').innerText = "---";
       }
@@ -673,5 +1099,6 @@
       document.getElementById('detail-panel').style.display = 'none';
     }
   </script>
+  <script src="camerawork.js"></script>
 </body>
 </html>
