@@ -290,7 +290,12 @@
     // ★★★ 【環境自動判定ロジック】 ★★★
     const currentHost = window.location.hostname;
     // Mac(Go Live)、Ubuntu、またはローカルIPアクセス時はローカルモードと判定
-    const IS_LOCAL_MODE = !currentHost || currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '192.168.1.99' || currentHost === '192.168.1.124';
+    const IS_LOCAL_MODE = !currentHost ||
+                          currentHost === 'localhost' ||
+                          currentHost === '127.0.0.1' ||
+                          currentHost === '192.168.1.99' ||
+                          currentHost === '192.168.1.124' ||
+                          currentHost.includes('trycloudflare.com');
 
     // ベースURLの初期状態（ローカル時はUbuntu直結、外部時はurl.jsonロード前なので空）
     let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
