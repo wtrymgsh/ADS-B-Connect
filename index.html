@@ -1100,15 +1100,6 @@
     }
   </script>
 
-  <script>
-    const cameraScript = document.createElement('script');
-    
-    // GitHub Pages上では、index.htmlと同じ場所にcamerawork.jsがあるので「./」で固定。
-    // ローカル環境（Ubuntuのポート8060）では、1つ上の階層にあるので「../」。
-    cameraScript.src = IS_LOCAL_MODE ? '../camerawork.js' : './camerawork.js';
-    
-    console.log(`🎥 Loading camera script from: ${cameraScript.src}`);
-    document.body.appendChild(cameraScript);
-  </script>
+
 </body>
 </html>
