@@ -438,7 +438,7 @@
       if (!IS_LOCAL_MODE) {
         try {
           console.log("🌐 External Mode: Fetching dynamic endpoint from url.json...");
-          const res = await fetch('url.json');
+          const res = await fetch('external_access/url.json');
           const config = await res.json();
           if (config.url) {
             // 末尾のスラッシュを除去してベースURLを設定
@@ -1099,6 +1099,6 @@
       document.getElementById('detail-panel').style.display = 'none';
     }
   </script>
-
+  <script src="camerawork.js"></script>
 </body>
 </html>
