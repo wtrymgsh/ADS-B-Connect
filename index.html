@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-  <title>Calgary YYC 3D Radar - Integrated Version</title>
+  <title>Calgary YYC 3D Radar - Integrated Universal Version</title>
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -287,16 +287,15 @@
       { id: '35R', center: [-113.99037210622825, 51.110237118893124], heading: 0, active: false, color: [0, 255, 0] }
     ];
 
-    // ★★★ 【自動判定ロジックの強化】 ★★★
-    // 開いているホスト名を取得
+    // ★★★ 【環境自動判定ロジック】 ★★★
     const currentHost = window.location.hostname;
-    // ローカル判定（localhost、Macの開発用IP、実機UbuntuのIP、またはローカルファイル直接起動の場合）
+    // Mac(Go Live)、Ubuntu、またはローカルIPアクセス時はローカルモードと判定
     const IS_LOCAL_MODE = !currentHost || currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '192.168.1.99' || currentHost === '192.168.1.124';
 
-    // 通信先ベースURLの初期化
+    // ベースURLの初期状態（ローカル時はUbuntu直結、外部時はurl.jsonロード前なので空）
     let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
     let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
-    let ws = null; // WebSocket用インスタンス保持用
+    let ws = null; 
 
     const STYLES = {
       cyber: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
@@ -331,6 +330,7 @@
     let flightPaths = liveFlightPaths; 
 
     let selectedAircraftId = null;
+
     document.addEventListener("DOMContentLoaded", () => {
       const widthSlider = document.getElementById('width-slider');
       const widthVal = document.getElementById('width-val');
@@ -432,16 +432,15 @@
 
     let map; 
 
-    // ★★★ 【非同期初期化処理】外部モードなら url.json を待ってから通信開始 ★★★
+    // ★★★ 【非同期初期化】環境に応じて通信先を決定 ★★★
     document.addEventListener("DOMContentLoaded", async () => {
-      // 1. 外部アクセスモードの場合は、まず url.json を取得
+      // 外部アクセスモード（GitHub Pagesなど）の場合は url.json をロード
       if (!IS_LOCAL_MODE) {
         try {
-          console.log("🌐 External Mode: Fetching dynamic endpoint from url.json...");
-          const res = await fetch('external_access/url.json');
+          console.log("🌐 External Mode: Fetching dynamic endpoint from ./url.json...");
+          const res = await fetch('./url.json'); // 同一階層の url.json
           const config = await res.json();
           if (config.url) {
-            // 末尾のスラッシュを除去してベースURLを設定
             const cleanUrl = config.url.replace(/\/$/, "");
             HTTP_BASE = cleanUrl;
             WS_BASE = cleanUrl.replace(/^http/, "ws");
@@ -449,16 +448,17 @@
           }
         } catch (e) {
           console.error("❌ Failed to load url.json. Falling back to relative routing.", e);
-          // 万が一失敗した場合は同じドメインを基準にする
           HTTP_BASE = window.location.origin;
           WS_BASE = window.location.origin.replace(/^http/, "ws");
         }
+      } else {
+        console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
       }
 
-      // 2. WebSocketの初期化
+      // 共通接続の開始
       initWebSocket();
 
-      // 3. マップ初期化
+      // マップ初期化
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -485,7 +485,6 @@
       });
     });
 
-    // WebSocket接続管理関数
     function initWebSocket() {
       if (!WS_BASE) return;
       console.log(`🔌 Connecting to WebSocket: ${WS_BASE}/ws`);
@@ -809,7 +808,6 @@
       }
     }
 
-    // ⏱️ メイン描画ループ
     setInterval(() => {
       let baseTime = Date.now();
       
@@ -1006,10 +1004,7 @@
         jointRounded: true,
         capRounded: true,
         pickable: false,
-        parameters: { 
-          depthTest: false, 
-          depthMask: false 
-        },
+        parameters: { depthTest: false, depthMask: false },
         updateTriggers: {
           getPath: [EXAGGERATION_FACTOR]
         }
@@ -1099,6 +1094,12 @@
       document.getElementById('detail-panel').style.display = 'none';
     }
   </script>
-  <script src="camerawork.js"></script>
+
+  <script>
+    const cameraScript = document.createElement('script');
+    // index.htmlの基準位置から見て、camerawork.jsは常に1つ上の階層（../）に存在するためこれで統一
+    cameraScript.src = '../camerawork.js';
+    document.body.appendChild(cameraScript);
+  </script>
 </body>
 </html>
