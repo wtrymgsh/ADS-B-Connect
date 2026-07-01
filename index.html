@@ -288,12 +288,12 @@
     ];
 
     const currentHost = window.location.hostname;
-    const IS_LOCAL_MODE = !currentHost ||
+    // CloudflareのURLを含む場合は、外部取得モードとして厳密に扱う
+    const IS_LOCAL_MODE = (!currentHost ||
                           currentHost === 'localhost' ||
                           currentHost === '127.0.0.1' ||
                           currentHost === '192.168.1.99' ||
-                          currentHost === '192.168.1.124' ||
-                          currentHost.includes('trycloudflare.com');
+                          currentHost === '192.168.1.124') && !currentHost.includes('trycloudflare.com');
 
     let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
     let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
@@ -451,15 +451,12 @@
           HTTP_BASE = window.location.origin;
           WS_BASE = window.location.origin.replace(/^http/, "ws");
         }
-        // 💡 外部モードのアドレス確定後に接続
-        initWebSocket();
       } else {
         console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
-        // 💡 ローカルモードのアドレス確定後に接続
-        initWebSocket();
       }
 
-      // ❌ ここにあった initWebSocket(); は削除しました（上記に移動）
+      // エンドポイントが確定してから確実につなぎに行く
+      initWebSocket();
 
       map = new maplibregl.Map({
           container: 'map',
@@ -486,6 +483,16 @@
           await loadArchiveList(); 
           
           map.addControl(deckOverlay);
+
+          // 🎥 カメラワークスクリプトの動的ロード（外部用で削除する場合はここから） ───
+        //   const cameraScript = document.createElement('script');
+        //   cameraScript.src = IS_LOCAL_MODE ? '../camerawork.js' : './camerawork.js';
+        //   console.log(`🎥 Loading camera script from: ${cameraScript.src}`);
+        //   cameraScript.onerror = () => {
+        //     console.warn("⚠️ camerawork.js could not be loaded. (Safe to ignore if intentionally removed)");
+        //   };
+        //   document.body.appendChild(cameraScript);
+          // ─────────────────────────────────── ここまで削除 ───
       });
     });
 
