@@ -516,7 +516,7 @@
         document.getElementById(`style-${name}`).classList.toggle('active', name === styleName);
       });
       map.setStyle(STYLES[styleName]);
-      map.once('styledata', () => { applyStyleSettings(); });
+      map.once('style.load', () => { applyStyleSettings(); });
     }
 
     const deckOverlay = new deck.MapboxOverlay({ 
