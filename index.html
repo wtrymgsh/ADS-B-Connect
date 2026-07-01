@@ -109,11 +109,37 @@
     .slider-wrapper { padding: 0 10px; margin-bottom: 8px; }
     
     .timeline-edges { display: flex; justify-content: space-between; margin-top: 12px; }
+    .timeline-edges div {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(10, 10, 10, 0.7); /* 背景色を親のdiv側に持たせる */
+      border-radius: 4px;
+      border: 1px solid rgba(0, 118, 255, 0.2);
+      box-shadow: 0 0 10px rgba(0, 118, 255, 0.2);
+    }
+
     .timeline-edges span { 
       font-family: monospace; font-size: 14px; font-weight: bold; color: #ffffff;           
-      background: rgba(10, 10, 10, 0.7); padding: 4px 10px; border-radius: 4px;
-      border: 1px solid rgba(0, 118, 255, 0.2); box-shadow: 0 0 10px rgba(0, 118, 255, 0.2);
-      position: relative; margin-top: 0px; 
+      padding: 4px 6px; /* 左右の余白を少し詰め気味（6px）にする */
+      position: relative;
+    }
+
+    /* 左側ブロック内の「-24h」の右側に少しだけ線を入れる、またはそのまま繋げる場合 */
+    #label-left-time {
+      color: #ffffff;
+      padding-right: 4px;
+    }
+    #abs-start-time {
+      padding-left: 4px;
+    }
+
+    /* 右側ブロック内の調整 */
+    #abs-end-time {
+      padding-right: 4px;
+    }
+    #label-right-time {
+      color: #ffffff;
+      padding-left: 4px;
     }
 
     #label-left-time::before {
@@ -266,10 +292,18 @@
       <div id="timespan-range-slider"></div>
     </div>
     
+    <!-- 記述例（お手元のクラス名やスタイルに合わせてください） -->
     <div class="timeline-edges">
-      <span id="label-left-time">-24h</span>
-      <span id="label-right-time">now</span>
+      <div>
+        <span id="label-left-time">--h:</span> <!-- ここが自動で -2h や -24h になります -->
+        <span id="abs-start-time">--:--:--</span> <!-- 左側の絶対時刻 -->
+      </div>
+      <div>
+        <span id="abs-end-time">--:--:--</span> <!-- 右側の絶対時刻 -->
+        <span id="label-right-time">:NOW</span>
+      </div>
     </div>
+
   </div>
 
   <div id="map"></div>
@@ -289,7 +323,8 @@
     ];
 
     const currentHost = window.location.hostname;
-    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
+    const isActualMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent) || 
+                           (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     let IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || currentHost.includes('cloudflare');
     let HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
@@ -345,13 +380,16 @@
       return `${hh}:${mm}:${ss}`;
     }
 
+    const minSliderRange = isActualMobile ? -2 : -24;
+    sliderStartHours = isActualMobile ? -2.0 : -12.0; // 初期位置も調整
+
     const rangeSlider = document.getElementById('timespan-range-slider');
     noUiSlider.create(rangeSlider, {
         start: [sliderStartHours, sliderEndHours], 
         connect: true,
         step: 0.25, 
         tooltips: [true, true], 
-        range: { 'min': -24, 'max': 0 },
+        range: { 'min': minSliderRange, 'max': 0 }, // minを動的に変更
         format: {
             to: function (value) {
                 let baseTime = Date.now();
@@ -372,36 +410,46 @@
         updateAbsoluteTimeLabels();
     });
 
+    // 【最終解決版】どんな状況でも確実にラベル文字を -2h / -24h に書き換える関数
     function updateAbsoluteTimeLabels() {
-      if (!rangeSlider || !rangeSlider.noUiSlider) return;
+      // 1. 現在の状態から、表示すべき正しい数値を決定
+      let minRange = isActualMobile ? -2 : -24;
 
+      if (viewMode === 'archive' && currentArchiveData.length > 0) {
+        if (rangeSlider && rangeSlider.noUiSlider) {
+          const options = rangeSlider.noUiSlider.options;
+          if (options && options.range && typeof options.range.min === 'number') {
+            minRange = options.range.min;
+          }
+        }
+      }
+
+      // 2. 💡【超重要】新旧どちらのID名（label-left-time も abel-left-time も）であっても強制的に中身を書き換える
+      const targetIds = ['label-left-time', 'abel-left-time', 'label-min-range'];
+      targetIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerText = `${minRange}h`; // ここで「-2h」や「-24h」をダイレクトに注入
+        }
+      });
+
+      // 3. 基準時刻（カルガリー時間）の決定
       let baseTime = Date.now();
       if (viewMode === 'archive' && currentArchiveData.length > 0) {
-        baseTime = Math.max(...currentArchiveData.map(d => d.ts));
-        if (baseTime < 10000000000) baseTime *= 1000;
+        let maxTs = Math.max(...currentArchiveData.map(d => d.ts));
+        if (maxTs < 10000000000) maxTs *= 1000;
+        baseTime = maxTs;
       }
 
-      const leftEdgeTimeStamp = baseTime - (24 * 60 * 60 * 1000);
+      // 4. 絶対時刻の計算と表示更新
+      const minAbsoluteTime = baseTime + (minRange * 60 * 60 * 1000);
+      const maxAbsoluteTime = baseTime;
 
-      let rightLabelText = "";
-      if (viewMode === 'live' || viewMode === 'realtime') {
-        rightLabelText = `Now: ${formatToCalgaryTime(baseTime)}`;
-      } else {
-        const d = new Date(baseTime);
-        const utc = d.getTime() + (d.getTimezoneOffset() * 60000);
-        const monthForOffset = d.getUTCMonth() + 1;
-        const calgaryOffsetHours = (monthForOffset >= 3 && monthForOffset <= 11) ? -6 : -7;
-        const calvaryDate = new Date(utc + (3600000 * calgaryOffsetHours));
+      const startEl = document.getElementById('abs-start-time');
+      const endEl = document.getElementById('abs-end-time');
 
-        const yyyy = calvaryDate.getFullYear();                         
-        const mm = String(calvaryDate.getMonth() + 1).padStart(2, '0'); 
-        const dd = String(calvaryDate.getDate()).padStart(2, '0');    
-        
-        rightLabelText = `${yyyy}/${mm}/${dd} ${formatToCalgaryTime(baseTime)}`;
-      }
-
-      document.getElementById('label-left-time').innerText = `-24h: ${formatToCalgaryTime(leftEdgeTimeStamp)}`;
-      document.getElementById('label-right-time').innerText = rightLabelText;
+      if (startEl) startEl.innerText = formatToCalgaryTime(minAbsoluteTime);
+      if (endEl) endEl.innerText = formatToCalgaryTime(maxAbsoluteTime);
     }
 
     let panelTimeout = null;
@@ -443,12 +491,10 @@
       map.on('load', async () => {
           applyStyleSettings();
           
-          // 💡 HTML内の 446行目付近にある try-catch ブロックをこれに差し替えてください
           try {
             console.log("📂 url.json を読み込み中...");
             const urlRes = await fetch('./url.json?t=' + Date.now());
             
-            // 🟢 サーバーが正常に 200 OK を返してきた場合のみ中身を解析する
             if (urlRes.ok) {
               const urlData = await urlRes.json();
               const targetUrl = urlData.backend_url || urlData.url;
@@ -458,15 +504,13 @@
                 console.log("📢 通信先が自動確定しました ➡️ HTTP:", HTTP_BASE, "WS:", WS_BASE);
               }
             } else {
-              // 🔴 404の時はエラーにせず、ここで優しくログを出すだけにする
               console.log("ℹ️ url.json が配置されていないかアクセスできないため、デフォルト設定で動作します。");
             }
           } catch (e) {
-            // JSONのパースエラーなどが起きても、赤いSyntaxErrorを出さずにここで吸収する
             console.log("ℹ️ url.json の読み込みをスキップしました（デフォルト設定で動作中）");
           }
 
-          switchViewMode(viewMode);
+          switchViewMode(viewMode)
           connectWebSocket();
           
           await loadInitialHistoricalData();
@@ -474,11 +518,10 @@
           
           map.addControl(deckOverlay);
 
-        //   // 🎥 カメラワークスクリプトの動的ロード
-        //   const cameraScript = document.createElement('script');
-        //   cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
-        //   cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
-        //   document.body.appendChild(cameraScript);
+          // const cameraScript = document.createElement('script');
+          // cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
+          // cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
+          // document.body.appendChild(cameraScript);
       });
     });
 
@@ -597,13 +640,15 @@
     }
 
     async function loadInitialHistoricalData() {
-      if (isMobile) {
-        console.log("📱 モバイル端末のため、初期履歴ロードをスキップします。");
-        return;
+      // 📱 iPadOS/iOS/Android を判別できる変数 (isActualMobile) に修正
+      if (isActualMobile) {
+        console.log("📱 モバイル端末のため、ロードを2時間に制限します。");
       }
+      const requestHours = isActualMobile ? 2 : 24;
+      
       try {
-        console.log(`⏳ Loading 24 hours of history from server...`);
-        const response = await fetch(`${HTTP_BASE}/api/history?hours=24`);
+        console.log(`⏳ Loading ${requestHours} hours of history from server...`);
+        const response = await fetch(`${HTTP_BASE}/api/history?hours=${requestHours}`);
         const data = await response.json();
         
         liveFlightPaths = {};
@@ -641,7 +686,6 @@
       }
 
       if (msg.lat !== undefined && msg.lon !== undefined) {
-        // 元の動いていたコードの仕様（msg.altをそのまま倍率変換に使う）に完全同期
         let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
               
@@ -694,13 +738,17 @@
 
       closeDetailPanel();
       
+      // ✨ 判定を関数の最初に行うようにします
+      const minRange = isActualMobile ? -2 : -24;
+
       if (mode === 'realtime' || mode === 'live') { 
         flightPaths = liveFlightPaths; 
-        sliderStartHours = MASTER_START_HOURS;
+        
+        sliderStartHours = isActualMobile ? -2.0 : MASTER_START_HOURS;
         sliderEndHours = 0.0;
 
         rangeSlider.noUiSlider.updateOptions({
-          range: { 'min': -24, 'max': 0 },
+          range: { 'min': minRange, 'max': 0 }, 
           padding: [0, 0],
           start: [sliderStartHours, sliderEndHours] 
         });
@@ -711,7 +759,7 @@
         currentArchiveData = [];
         deckOverlay.setProps({ layers: [] });
         rangeSlider.noUiSlider.updateOptions({
-          range: { 'min': -24, 'max': 0 },
+          range: { 'min': minRange, 'max': 0 }, // ✨ ここを minRange に変更
           padding: [0, 0],
           start: [0, 0]
         });
@@ -807,6 +855,43 @@
       }
     }
 
+    // 【新規・統合】タイムバー下部の相対時間ラベル（-24h等）と絶対時刻を動的に更新する関数
+    function updateAbsoluteTimeLabels() {
+      let minRange = -24; 
+      if (rangeSlider && rangeSlider.noUiSlider) {
+        const options = rangeSlider.noUiSlider.options;
+        if (options && options.range && typeof options.range.min === 'number') {
+          minRange = options.range.min;
+        }
+      }
+
+      // 相対時間ラベル（-24h / -2h）の書き換え
+      const minLabelEl = document.getElementById('label-min-range');
+      if (minLabelEl) {
+        minLabelEl.innerText = `${minRange}h`;
+      }
+
+      // 基準時刻の決定
+      let baseTime = Date.now();
+      if (viewMode === 'archive' && currentArchiveData.length > 0) {
+        let maxTs = Math.max(...currentArchiveData.map(d => d.ts));
+        if (maxTs < 10000000000) maxTs *= 1000;
+        baseTime = maxTs;
+      }
+
+      // 最小レンジ（最古）と現在（最新）の絶対時刻を計算
+      const minAbsoluteTime = baseTime + (minRange * 60 * 60 * 1000);
+      const maxAbsoluteTime = baseTime;
+
+      const startEl = document.getElementById('abs-start-time');
+      const endEl = document.getElementById('abs-end-time');
+
+      if (startEl) startEl.innerText = formatToCalgaryTime(minAbsoluteTime);
+      if (endEl) endEl.innerText = formatToCalgaryTime(maxAbsoluteTime);
+    }
+
+    // 1秒ごとの定期処理
+    // 1秒ごとの定期処理
     setInterval(() => {
       let baseTime = Date.now();
       
@@ -816,15 +901,25 @@
         if (maxTs < 10000000000) maxTs *= 1000;
         baseTime = maxTs;
       } else {
-        updateAbsoluteTimeLabels();
-
+        // ① 先にスライダーの現在値を取得
         if (rangeSlider && rangeSlider.noUiSlider) {
           const currentValues = rangeSlider.noUiSlider.get(true);
           sliderStartHours = currentValues[0];
           sliderEndHours = currentValues[1];
         }
 
-        const tooltips = rangeSlider.querySelectorAll('.noUi-tooltip');
+        // ② 時刻とラベルの更新処理
+        updateAbsoluteTimeLabels();
+
+        // 💡【ここを追加】ライブラリの自動描画に負けないよう、毎秒ここで確実に minRange の値で上書きする！
+        const minRange = isActualMobile ? -2 : -24;
+        const leftLabel = document.getElementById('label-left-time');
+        if (leftLabel) {
+          leftLabel.innerText = `${minRange}h:`; // 変数 minRange の値を使って表示
+        }
+
+        // ③ スライダーのノブのツールチップ更新
+        const tooltips = rangeSlider.querySelectorAll('.noUi-handle .noUi-tooltip');
         if (tooltips.length === 2) {
           const startTimeStamp = baseTime + (sliderStartHours * 60 * 60 * 1000);
           const endTimeStamp = baseTime + (sliderEndHours * 60 * 60 * 1000);
@@ -836,12 +931,16 @@
       const timeLimitStart = (viewMode === 'live') ? (baseTime - 24 * 60 * 60 * 1000) : (baseTime + (sliderStartHours * 60 * 60 * 1000));
       const timeLimitEnd = (viewMode === 'live') ? (baseTime + 10 * 1000) : (baseTime + (sliderEndHours * 60 * 60 * 1000));
 
+      // 先に描画用のデータ配列を初期化（処理順序のエラーを防ぐため最上部に配置）
       let activePathsArray = [];
       let currentPositionsArray = []; 
 
+      // iPadを含むモバイル端末ならメモリ保持限界（お掃除スパン）を2時間、PCなら24時間にする
+      const maxMemoryRetentionHours = isActualMobile ? 2 : 24;
+
       for (const id in liveFlightPaths) {
         liveFlightPaths[id].segments = liveFlightPaths[id].segments.map(segment => {
-          return segment.filter(pt => (Date.now() - pt.time) < (24 * 60 * 60 * 1000));
+          return segment.filter(pt => (Date.now() - pt.time) < (maxMemoryRetentionHours * 60 * 60 * 1000));
         }).filter(segment => segment.length > 0);
         
         if (liveFlightPaths[id].segments.length === 0) {
@@ -1059,7 +1158,6 @@
 
       if (lastSegment && lastSegment.length > 0) {
         const lastPt = lastSegment[lastSegment.length - 1];
-        // 元コード通りのフィート計算式に統一
         const altFt = Math.round(lastPt.rawAlt / 0.3048); 
         document.getElementById('det-alt').innerText = altFt.toLocaleString() + " ft";
         
