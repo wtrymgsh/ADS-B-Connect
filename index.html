@@ -287,7 +287,6 @@
       { id: '35R', center: [-113.99037210622825, 51.110237118893124], heading: 0, active: false, color: [0, 255, 0] }
     ];
 
-    // ★★★ 【環境自動判定ロジック】 ★★★
     const currentHost = window.location.hostname;
     const IS_LOCAL_MODE = !currentHost ||
                           currentHost === 'localhost' ||
@@ -296,7 +295,6 @@
                           currentHost === '192.168.1.124' ||
                           currentHost.includes('trycloudflare.com');
 
-    // ベースURLの初期状態（非同期処理で確定するまで、空もしくはデフォルトを設定）
     let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
     let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
     let ws = null; 
@@ -436,7 +434,6 @@
 
     let map; 
 
-    // ★★★ 【非同期初期化】環境に応じて確実に通信先を決定した後に各種初期化を行う ★★★
     document.addEventListener("DOMContentLoaded", async () => {
       if (!IS_LOCAL_MODE) {
         try {
@@ -447,7 +444,7 @@
             const cleanUrl = config.url.replace(/\/$/, "");
             HTTP_BASE = cleanUrl;
             WS_BASE = cleanUrl.replace(/^http/, "ws");
-            console.log(`✅ Endpoints updated: HTTP->${HTTP_BASE}, WS->${WS_BASE}`);
+            console.log(`✅ Endpoints updated: HTTP -> ${HTTP_BASE}, WS -> ${WS_BASE}`);
           }
         } catch (e) {
           console.error("❌ Failed to load url.json. Falling back to relative routing.", e);
@@ -458,7 +455,6 @@
         console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
       }
 
-      // エンドポイント確定後に各初期化シーケンスを開始
       initWebSocket();
 
       map = new maplibregl.Map({
@@ -482,17 +478,11 @@
           applyStyleSettings();
           switchViewMode(viewMode);
           
-          // HTTP_BASE確定後に安全に各APIを叩く
           await loadInitialHistoricalData();
           await loadArchiveList(); 
           
           map.addControl(deckOverlay);
 
-          // カメラ用スクリプトを環境に合わせて動的にDOM追加
-          const cameraScript = document.createElement('script');
-          cameraScript.src = IS_LOCAL_MODE ? '../camerawork.js' : './camerawork.js';
-          console.log(`🎥 Loading camera script from: ${cameraScript.src}`);
-          document.body.appendChild(cameraScript);
       });
     });
 
