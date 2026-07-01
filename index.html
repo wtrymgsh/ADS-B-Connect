@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <link rel="icon" href="data:,">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
@@ -442,21 +443,27 @@
       map.on('load', async () => {
           applyStyleSettings();
           
+          // 💡 HTML内の 446行目付近にある try-catch ブロックをこれに差し替えてください
           try {
             console.log("📂 url.json を読み込み中...");
-            // GitHubリポジトリ内でも確実にルートを参照できるように相対パスの記述法を標準化
             const urlRes = await fetch('./url.json?t=' + Date.now());
-            const urlData = await urlRes.json();
             
-            // config.url もしくは backend_url のどちらの形式で書かれていても対応できるようにする
-            const targetUrl = urlData.backend_url || urlData.url;
-            if (targetUrl) {
-              HTTP_BASE = targetUrl.replace(/\/$/, "");
-              WS_BASE = HTTP_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
-              console.log("📢 通信先が自動確定しました ➡️ HTTP:", HTTP_BASE, "WS:", WS_BASE);
+            // 🟢 サーバーが正常に 200 OK を返してきた場合のみ中身を解析する
+            if (urlRes.ok) {
+              const urlData = await urlRes.json();
+              const targetUrl = urlData.backend_url || urlData.url;
+              if (targetUrl) {
+                HTTP_BASE = targetUrl.replace(/\/$/, "");
+                WS_BASE = HTTP_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
+                console.log("📢 通信先が自動確定しました ➡️ HTTP:", HTTP_BASE, "WS:", WS_BASE);
+              }
+            } else {
+              // 🔴 404の時はエラーにせず、ここで優しくログを出すだけにする
+              console.log("ℹ️ url.json が配置されていないかアクセスできないため、デフォルト設定で動作します。");
             }
           } catch (e) {
-            console.error("⚠️ url.jsonのロードに失敗したため、初期設定値または相対パスで動作します:", e);
+            // JSONのパースエラーなどが起きても、赤いSyntaxErrorを出さずにここで吸収する
+            console.log("ℹ️ url.json の読み込みをスキップしました（デフォルト設定で動作中）");
           }
 
           switchViewMode(viewMode);
