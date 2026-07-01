@@ -203,8 +203,8 @@
     
     <div class="panel-content">
       <div class="panel-section">
-        <label>📐 Line Thickness: <span id="width-val"></span></label>
-        <input type="range" id="width-slider" min="1" max="5" step="1" oninput="updateLineWidth(this.value)">
+        <label>📐 Line Thickness: <span id="width-val">1</span></label>
+        <input type="range" id="width-slider" min="1" max="5" step="1" value="1" oninput="updateLineWidth(this.value)">
       </div>
 
       <div class="panel-section">
@@ -288,15 +288,11 @@
     ];
 
     const currentHost = window.location.hostname;
-    // CloudflareのURLを含む場合は、外部取得モードとして厳密に扱う
-    const IS_LOCAL_MODE = (!currentHost ||
-                          currentHost === 'localhost' ||
-                          currentHost === '127.0.0.1' ||
-                          currentHost === '192.168.1.99' ||
-                          currentHost === '192.168.1.124') && !currentHost.includes('trycloudflare.com');
+    const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
-    let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
-    let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
+    let IS_NATIVE = window.location.port === '8056' || window.location.port === '8060' || currentHost.includes('cloudflare');
+    let HTTP_BASE = IS_NATIVE ? '' : 'http://localhost:8056';
+    let WS_BASE   = IS_NATIVE ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}` : 'ws://localhost:8056';
     let ws = null; 
 
     const STYLES = {
@@ -332,15 +328,6 @@
     let flightPaths = liveFlightPaths; 
 
     let selectedAircraftId = null;
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const widthSlider = document.getElementById('width-slider');
-      const widthVal = document.getElementById('width-val');
-      if (widthSlider && widthVal) {
-        widthSlider.value = currentLineWidth;
-        widthVal.innerText = currentLineWidth;
-      }
-    });
 
     function formatToCalgaryTime(timestamp) {
       if (timestamp < 10000000000) timestamp *= 1000;
@@ -435,29 +422,6 @@
     let map; 
 
     document.addEventListener("DOMContentLoaded", async () => {
-      if (!IS_LOCAL_MODE) {
-        try {
-          console.log("🌐 External Mode: Fetching dynamic endpoint from ./url.json...");
-          const res = await fetch('./url.json'); 
-          const config = await res.json();
-          if (config.url) {
-            const cleanUrl = config.url.replace(/\/$/, "");
-            HTTP_BASE = cleanUrl;
-            WS_BASE = cleanUrl.replace(/^http/, "ws");
-            console.log(`✅ Endpoints updated: HTTP -> ${HTTP_BASE}, WS -> ${WS_BASE}`);
-          }
-        } catch (e) {
-          console.error("❌ Failed to load url.json. Falling back to relative routing.", e);
-          HTTP_BASE = window.location.origin;
-          WS_BASE = window.location.origin.replace(/^http/, "ws");
-        }
-      } else {
-        console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
-      }
-
-      // エンドポイントが確定してから確実につなぎに行く
-      initWebSocket();
-
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -477,43 +441,55 @@
 
       map.on('load', async () => {
           applyStyleSettings();
+          
+          try {
+            console.log("📂 url.json を読み込み中...");
+            // GitHubリポジトリ内でも確実にルートを参照できるように相対パスの記述法を標準化
+            const urlRes = await fetch('./url.json?t=' + Date.now());
+            const urlData = await urlRes.json();
+            
+            // config.url もしくは backend_url のどちらの形式で書かれていても対応できるようにする
+            const targetUrl = urlData.backend_url || urlData.url;
+            if (targetUrl) {
+              HTTP_BASE = targetUrl.replace(/\/$/, "");
+              WS_BASE = HTTP_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
+              console.log("📢 通信先が自動確定しました ➡️ HTTP:", HTTP_BASE, "WS:", WS_BASE);
+            }
+          } catch (e) {
+            console.error("⚠️ url.jsonのロードに失敗したため、初期設定値または相対パスで動作します:", e);
+          }
+
           switchViewMode(viewMode);
+          connectWebSocket();
           
           await loadInitialHistoricalData();
           await loadArchiveList(); 
           
           map.addControl(deckOverlay);
 
-          // 🎥 カメラワークスクリプトの動的ロード（外部用で削除する場合はここから） ───
+        //   // 🎥 カメラワークスクリプトの動的ロード
         //   const cameraScript = document.createElement('script');
-        //   cameraScript.src = IS_LOCAL_MODE ? '../camerawork.js' : './camerawork.js';
-        //   console.log(`🎥 Loading camera script from: ${cameraScript.src}`);
-        //   cameraScript.onerror = () => {
-        //     console.warn("⚠️ camerawork.js could not be loaded. (Safe to ignore if intentionally removed)");
-        //   };
+        //   cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
+        //   cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
         //   document.body.appendChild(cameraScript);
-          // ─────────────────────────────────── ここまで削除 ───
       });
     });
 
-    function initWebSocket() {
-      if (!WS_BASE) {
-        console.warn("⚠️ WS_BASE is not defined yet. Skipping WebSocket initialization.");
-        return;
-      }
-      console.log(`🔌 Connecting to WebSocket: ${WS_BASE}/ws`);
-      ws = new WebSocket(`${WS_BASE}/ws`);
+    function connectWebSocket() {
+      if (!WS_BASE) return;
+      const targetUrl = WS_BASE.endsWith('/') ? `${WS_BASE}ws` : `${WS_BASE}/ws`;
+      console.log(`🔌 Connecting to WebSocket: ${targetUrl}`);
+      ws = new WebSocket(targetUrl);
       ws.onmessage = (event) => {
+        if (event.data === "connected" || !event.data.startsWith("{")) return;
         const msg = JSON.parse(event.data);
         processIncomingMessageToTarget(msg, liveFlightPaths);
       };
       ws.onclose = () => {
         console.log("⚠️ WebSocket closed. Reconnecting in 5s...");
-        setTimeout(initWebSocket, 5000);
+        setTimeout(connectWebSocket, 5000);
       };
-      ws.onerror = (err) => {
-        console.error("❌ WebSocket error:", err);
-      };
+      ws.onerror = (err) => { console.error("❌ WebSocket error:", err); };
     }
 
     function toggleYycLock() {
@@ -591,10 +567,10 @@
     }
 
     const YYC_CONTROL_ZONE = [
-      { name: "Control Zone", radius: 5*1852, rawElevation: 1084, rawCeiling: 3000*0.3048, color: [0, 118, 255] },
-      { name: "TCA Inner", radius: 15*1852, rawElevation: 4800*0.3048, rawCeiling: (12500-4800)*0.3048, color: [230, 50, 50] },
-      { name: "TCA Middle", radius: 20*1852, rawElevation: 5500*0.3048, rawCeiling: (12500-5500)*0.3048, color: [230, 120, 50] },
-      { name: "TCA Outer", radius: 30*1852, rawElevation: 8000*0.3048, rawCeiling: (12500-8000)*0.3048, color: [230, 200, 50] }
+      { name: "Control Zone", radius: 12964, rawElevation: 1084, rawCeiling: 928, color: [0, 118, 255] },
+      { name: "TCA Inner", radius: 27780, rawElevation: 1463, rawCeiling: 4023, color: [230, 50, 50] },
+      { name: "TCA Middle", radius: 37040, rawElevation: 1676, rawCeiling: 3810, color: [230, 120, 50] },
+      { name: "TCA Outer", radius: 55560, rawElevation: 2438, rawCeiling: 3048, color: [230, 200, 50] }
     ];
 
     function generateAirspaceCircle(center, radiusMeters, rawElevation, pointsCount = 64) {
@@ -614,7 +590,10 @@
     }
 
     async function loadInitialHistoricalData() {
-      if (!HTTP_BASE) return;
+      if (isMobile) {
+        console.log("📱 モバイル端末のため、初期履歴ロードをスキップします。");
+        return;
+      }
       try {
         console.log(`⏳ Loading 24 hours of history from server...`);
         const response = await fetch(`${HTTP_BASE}/api/history?hours=24`);
@@ -655,8 +634,8 @@
       }
 
       if (msg.lat !== undefined && msg.lon !== undefined) {
-        const altInMeters = msg.alt * 0.3048;
-        let adjustedAlt = altInMeters * EXAGGERATION_FACTOR; 
+        // 元の動いていたコードの仕様（msg.altをそのまま倍率変換に使う）に完全同期
+        let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
               
         let correctTs = Number(msg.ts);
@@ -736,7 +715,7 @@
     }
     
     async function saveCurrentTimespan() {
-      if (viewMode !== 'realtime' || !HTTP_BASE) return;
+      if (viewMode !== 'realtime') return;
       
       let baseTime = Date.now();
       const startTimeStr = formatToCalgaryTime(baseTime + (sliderStartHours * 60 * 60 * 1000));
@@ -764,7 +743,6 @@
     }
 
     async function loadArchiveList() {
-      if (!HTTP_BASE) return;
       try {
         const response = await fetch(`${HTTP_BASE}/api/archive/list`);
         const list = await response.json();
@@ -783,7 +761,7 @@
     }
 
     async function loadSelectedArchive(filename) {
-      if (!filename || !HTTP_BASE) return;
+      if (!filename) return;
       try {
         console.log(`⏳ Loading archive file: ${filename}...`);
         const response = await fetch(`${HTTP_BASE}/api/archive/download?filename=${filename}`);
@@ -1052,15 +1030,11 @@
     }
 
     function resetToNorth() {
-      const currentZoom = map.getZoom();
-      const currentPitch = map.getPitch();
-      map.easeTo({ bearing: 0, pitch: currentPitch, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+      map.easeTo({ bearing: 0, pitch: map.getPitch(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
 
     function setViewToTop() {
-      const currentZoom = map.getZoom();
-      const currentBearing = map.getBearing();
-      map.easeTo({ pitch: 0, bearing: currentBearing, zoom: currentZoom, duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
+      map.easeTo({ pitch: 0, bearing: map.getBearing(), zoom: map.getZoom(), duration: 800, cubicBezier: [0.25, 1, 0.5, 1] });
     }
   
     function updateDetailPanel(hexId) {
@@ -1078,6 +1052,7 @@
 
       if (lastSegment && lastSegment.length > 0) {
         const lastPt = lastSegment[lastSegment.length - 1];
+        // 元コード通りのフィート計算式に統一
         const altFt = Math.round(lastPt.rawAlt / 0.3048); 
         document.getElementById('det-alt').innerText = altFt.toLocaleString() + " ft";
         
