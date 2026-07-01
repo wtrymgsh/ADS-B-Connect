@@ -289,7 +289,6 @@
 
     // ★★★ 【環境自動判定ロジック】 ★★★
     const currentHost = window.location.hostname;
-    // Mac(Go Live)、Ubuntu、またはローカルIPアクセス時はローカルモードと判定
     const IS_LOCAL_MODE = !currentHost ||
                           currentHost === 'localhost' ||
                           currentHost === '127.0.0.1' ||
@@ -297,7 +296,7 @@
                           currentHost === '192.168.1.124' ||
                           currentHost.includes('trycloudflare.com');
 
-    // ベースURLの初期状態（ローカル時はUbuntu直結、外部時はurl.jsonロード前なので空）
+    // ベースURLの初期状態（非同期処理で確定するまで、空もしくはデフォルトを設定）
     let HTTP_BASE = IS_LOCAL_MODE ? 'http://192.168.1.124:8060' : '';
     let WS_BASE   = IS_LOCAL_MODE ? 'ws://192.168.1.124:8060' : '';
     let ws = null; 
@@ -437,13 +436,12 @@
 
     let map; 
 
-    // ★★★ 【非同期初期化】環境に応じて通信先を決定 ★★★
+    // ★★★ 【非同期初期化】環境に応じて確実に通信先を決定した後に各種初期化を行う ★★★
     document.addEventListener("DOMContentLoaded", async () => {
-      // 外部アクセスモード（GitHub Pagesなど）の場合は url.json をロード
       if (!IS_LOCAL_MODE) {
         try {
           console.log("🌐 External Mode: Fetching dynamic endpoint from ./url.json...");
-          const res = await fetch('./url.json'); // 同一階層の url.json
+          const res = await fetch('./url.json'); 
           const config = await res.json();
           if (config.url) {
             const cleanUrl = config.url.replace(/\/$/, "");
@@ -460,10 +458,9 @@
         console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
       }
 
-      // 共通接続の開始
+      // エンドポイント確定後に各初期化シーケンスを開始
       initWebSocket();
 
-      // マップ初期化
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -481,17 +478,29 @@
 
       resetPanelTimer();
 
-      map.on('load', () => {
+      map.on('load', async () => {
           applyStyleSettings();
           switchViewMode(viewMode);
-          loadInitialHistoricalData();
-          loadArchiveList(); 
+          
+          // HTTP_BASE確定後に安全に各APIを叩く
+          await loadInitialHistoricalData();
+          await loadArchiveList(); 
+          
           map.addControl(deckOverlay);
+
+          // カメラ用スクリプトを環境に合わせて動的にDOM追加
+          const cameraScript = document.createElement('script');
+          cameraScript.src = IS_LOCAL_MODE ? '../camerawork.js' : './camerawork.js';
+          console.log(`🎥 Loading camera script from: ${cameraScript.src}`);
+          document.body.appendChild(cameraScript);
       });
     });
 
     function initWebSocket() {
-      if (!WS_BASE) return;
+      if (!WS_BASE) {
+        console.warn("⚠️ WS_BASE is not defined yet. Skipping WebSocket initialization.");
+        return;
+      }
       console.log(`🔌 Connecting to WebSocket: ${WS_BASE}/ws`);
       ws = new WebSocket(`${WS_BASE}/ws`);
       ws.onmessage = (event) => {
@@ -1099,7 +1108,5 @@
       document.getElementById('detail-panel').style.display = 'none';
     }
   </script>
-
-
 </body>
 </html>
