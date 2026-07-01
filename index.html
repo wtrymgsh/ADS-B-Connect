@@ -451,11 +451,15 @@
           HTTP_BASE = window.location.origin;
           WS_BASE = window.location.origin.replace(/^http/, "ws");
         }
+        // 💡 外部モードのアドレス確定後に接続
+        initWebSocket();
       } else {
         console.log(`🏠 Local Mode: Connected directly to ${HTTP_BASE}`);
+        // 💡 ローカルモードのアドレス確定後に接続
+        initWebSocket();
       }
 
-      initWebSocket();
+      // ❌ ここにあった initWebSocket(); は削除しました（上記に移動）
 
       map = new maplibregl.Map({
           container: 'map',
@@ -482,7 +486,6 @@
           await loadArchiveList(); 
           
           map.addControl(deckOverlay);
-
       });
     });
 
