@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
   
   <link href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.css" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.min.js"></script>
@@ -38,12 +39,20 @@
 
     .panel-section { margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 8px; }
     .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 1px; }
+    .panel-section label { display: block; font-size: 12px; color: #aaa; margin-bottom: 3px; }
+    
     .btn-group { 
       display: grid; 
       grid-template-columns: repeat(3, 1fr); 
       gap: 4px; 
       width: 100%; 
+    }
+    
+    .btn-group-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+      width: 100%;
     }
     
     .btn {
@@ -112,7 +121,7 @@
     .timeline-edges div {
       display: inline-flex;
       align-items: center;
-      background: rgba(10, 10, 10, 0.7); /* 背景色を親のdiv側に持たせる */
+      background: rgba(10, 10, 10, 0.7); 
       border-radius: 4px;
       border: 1px solid rgba(0, 118, 255, 0.2);
       box-shadow: 0 0 10px rgba(0, 118, 255, 0.2);
@@ -120,27 +129,14 @@
 
     .timeline-edges span { 
       font-family: monospace; font-size: 14px; font-weight: bold; color: #ffffff;           
-      padding: 4px 6px; /* 左右の余白を少し詰め気味（6px）にする */
+      padding: 4px 6px; 
       position: relative;
     }
 
-    /* 左側ブロック内の「-24h」の右側に少しだけ線を入れる、またはそのまま繋げる場合 */
-    #label-left-time {
-      color: #ffffff;
-      padding-right: 4px;
-    }
-    #abs-start-time {
-      padding-left: 4px;
-    }
-
-    /* 右側ブロック内の調整 */
-    #abs-end-time {
-      padding-right: 4px;
-    }
-    #label-right-time {
-      color: #ffffff;
-      padding-left: 4px;
-    }
+    #label-left-time { color: #ffffff; padding-right: 4px; }
+    #abs-start-time { padding-left: 4px; }
+    #abs-end-time { padding-right: 4px; }
+    #label-right-time { color: #ffffff; padding-left: 4px; }
 
     #label-left-time::before {
       content: ''; position: absolute; top: -15px; left: 5px;       
@@ -233,10 +229,23 @@
         <label>📐 Line Thickness: <span id="width-val">1</span></label>
         <input type="range" id="width-slider" min="1" max="5" step="1" value="1" oninput="updateLineWidth(this.value)">
       </div>
-
+      
       <div class="panel-section">
         <label>🌐 Control Zone: <span id="airspace-opacity-val">0</span>%</label>
         <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="0" oninput="updateAirspaceOpacity(this.value)">
+        
+        <!-- YBW-CZ / YYC-CZ トグルボタン -->
+        <div class="btn-group-2" style="margin-top: 8px; margin-bottom: 6px;">
+          <button id="btn-airspace-CYBW_CZ" class="btn rwy-btn active" onclick="toggleAirspace('CYBW_CZ')">YBW-CZ</button>
+          <button id="btn-airspace-CYYC_CZ" class="btn rwy-btn active" onclick="toggleAirspace('CYYC_CZ')">YYC-CZ</button>
+        </div>
+        
+        <!-- Inner / Middle / Outer トグルボタン -->
+        <div class="btn-group">
+          <button id="btn-airspace-TCA_INNER" class="btn rwy-btn active" onclick="toggleAirspace('TCA_INNER')">Inner</button>
+          <button id="btn-airspace-TCA_MIDDLE" class="btn rwy-btn active" onclick="toggleAirspace('TCA_MIDDLE')">Middle</button>
+          <button id="btn-airspace-TCA_OUTER" class="btn rwy-btn active" onclick="toggleAirspace('TCA_OUTER')">Outer</button>
+        </div>
       </div>
       
       <div class="panel-section">
@@ -259,8 +268,8 @@
       <div class="panel-section">
         <label>🗺️ Map Style</label>
         <div class="btn-group">
-          <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Cyber</button>
-          <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Backdrop</button>
+          <button id="style-cyber" class="btn" onclick="switchMapStyle('cyber')">Dark</button>
+          <button id="style-backdrop" class="btn active" onclick="switchMapStyle('backdrop')">Light</button>
           <button id="style-satellite" class="btn" onclick="switchMapStyle('satellite')">Satellite</button>
         </div>
       </div>
@@ -287,31 +296,37 @@
     </div>
   </div>
 
-  <div id="bottom-timeline-panel">
+  <div id="bottom-timeline-panel" class="hidden">
     <div class="slider-wrapper">
       <div id="timespan-range-slider"></div>
     </div>
     
-    <!-- 記述例（お手元のクラス名やスタイルに合わせてください） -->
     <div class="timeline-edges">
       <div>
-        <span id="label-left-time">--h:</span> <!-- ここが自動で -2h や -24h になります -->
-        <span id="abs-start-time">--:--:--</span> <!-- 左側の絶対時刻 -->
+        <span id="label-left-time">--h:</span> 
+        <span id="abs-start-time">--:--:--</span> 
       </div>
       <div>
-        <span id="abs-end-time">--:--:--</span> <!-- 右側の絶対時刻 -->
+        <span id="abs-end-time">--:--:--</span> 
         <span id="label-right-time">:NOW</span>
       </div>
     </div>
-
   </div>
 
   <div id="map"></div>
 
   <script>
-    const YYC_CENTER = [-114.0078, 51.1139];
+    const YYC_CENTER = [-114.0133, 51.1228];
     let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
+    // 将来のオン・オフ用のフラグ（現時点ではすべて true で固定）
+    let airspaceVisibility = {
+        "CYBW_CZ": true,
+        "CYYC_CZ": true,
+        "TCA_INNER": true,
+        "TCA_MIDDLE": true,
+        "TCA_OUTER": true
+    };
 
     let YYC_RUNWAYS = [
       { id: '11',  center: [-114.03646743029697, 51.126731789097676], heading: 120.142261, active: false, color: [0, 255, 0] },
@@ -381,7 +396,7 @@
     }
 
     const minSliderRange = isActualMobile ? -2 : -24;
-    sliderStartHours = isActualMobile ? -2.0 : -12.0; // 初期位置も調整
+    sliderStartHours = isActualMobile ? -2.0 : -12.0; 
 
     const rangeSlider = document.getElementById('timespan-range-slider');
     noUiSlider.create(rangeSlider, {
@@ -389,7 +404,7 @@
         connect: true,
         step: 0.25, 
         tooltips: [true, true], 
-        range: { 'min': minSliderRange, 'max': 0 }, // minを動的に変更
+        range: { 'min': minSliderRange, 'max': 0 }, 
         format: {
             to: function (value) {
                 let baseTime = Date.now();
@@ -410,48 +425,6 @@
         updateAbsoluteTimeLabels();
     });
 
-    // 【最終解決版】どんな状況でも確実にラベル文字を -2h / -24h に書き換える関数
-    function updateAbsoluteTimeLabels() {
-      // 1. 現在の状態から、表示すべき正しい数値を決定
-      let minRange = isActualMobile ? -2 : -24;
-
-      if (viewMode === 'archive' && currentArchiveData.length > 0) {
-        if (rangeSlider && rangeSlider.noUiSlider) {
-          const options = rangeSlider.noUiSlider.options;
-          if (options && options.range && typeof options.range.min === 'number') {
-            minRange = options.range.min;
-          }
-        }
-      }
-
-      // 2. 💡【超重要】新旧どちらのID名（label-left-time も abel-left-time も）であっても強制的に中身を書き換える
-      const targetIds = ['label-left-time', 'abel-left-time', 'label-min-range'];
-      targetIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.innerText = `${minRange}h`; // ここで「-2h」や「-24h」をダイレクトに注入
-        }
-      });
-
-      // 3. 基準時刻（カルガリー時間）の決定
-      let baseTime = Date.now();
-      if (viewMode === 'archive' && currentArchiveData.length > 0) {
-        let maxTs = Math.max(...currentArchiveData.map(d => d.ts));
-        if (maxTs < 10000000000) maxTs *= 1000;
-        baseTime = maxTs;
-      }
-
-      // 4. 絶対時刻の計算と表示更新
-      const minAbsoluteTime = baseTime + (minRange * 60 * 60 * 1000);
-      const maxAbsoluteTime = baseTime;
-
-      const startEl = document.getElementById('abs-start-time');
-      const endEl = document.getElementById('abs-end-time');
-
-      if (startEl) startEl.innerText = formatToCalgaryTime(minAbsoluteTime);
-      if (endEl) endEl.innerText = formatToCalgaryTime(maxAbsoluteTime);
-    }
-
     let panelTimeout = null;
     const AUTO_COLLAPSE_DELAY = 5000;
 
@@ -469,6 +442,11 @@
     }
 
     let map; 
+
+    const deckOverlay = new deck.MapboxOverlay({ 
+      layers: [],
+      onClick: (info) => { if (!info.object) { closeDetailPanel(); } }
+    });
 
     document.addEventListener("DOMContentLoaded", async () => {
       map = new maplibregl.Map({
@@ -494,7 +472,6 @@
           try {
             console.log("📂 url.json を読み込み中...");
             const urlRes = await fetch('./url.json?t=' + Date.now());
-            
             if (urlRes.ok) {
               const urlData = await urlRes.json();
               const targetUrl = urlData.backend_url || urlData.url;
@@ -503,25 +480,16 @@
                 WS_BASE = HTTP_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
                 console.log("📢 通信先が自動確定しました ➡️ HTTP:", HTTP_BASE, "WS:", WS_BASE);
               }
-            } else {
-              console.log("ℹ️ url.json が配置されていないかアクセスできないため、デフォルト設定で動作します。");
             }
           } catch (e) {
-            console.log("ℹ️ url.json の読み込みをスキップしました（デフォルト設定で動作中）");
+            console.log("ℹ️ url.json 読み込みスキップ（ローカルデフォルト）");
           }
 
-          switchViewMode(viewMode)
+          switchViewMode(viewMode);
           connectWebSocket();
-          
           await loadInitialHistoricalData();
           await loadArchiveList(); 
-          
           map.addControl(deckOverlay);
-
-          // const cameraScript = document.createElement('script');
-          // cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
-          // cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
-          // document.body.appendChild(cameraScript);
       });
     });
 
@@ -569,11 +537,6 @@
       map.once('style.load', () => { applyStyleSettings(); });
     }
 
-    const deckOverlay = new deck.MapboxOverlay({ 
-      layers: [],
-      onClick: (info) => { if (!info.object) { closeDetailPanel(); } }
-    });
-
     function getColorByAltitude(rawAlt) {
       let currentMinAlt = 0; 
       let currentMaxAlt = 9000; 
@@ -586,6 +549,7 @@
       ];
     }
 
+    // アプローチパスを生成
     function generateApproachLine(rwy, exag) {
       const startLon = rwy.center[0];
       const startLat = rwy.center[1];
@@ -616,36 +580,401 @@
       }
     }
 
+
+    // 管制圏の生成
+    const NM_TO_M = 1852;
+    const FT_TO_M = 0.3048;
+
+    const CYYC_CENTER = [-114.0133, 51.1228]; 
+    const CYBW_CENTER = [-114.3744, 51.1031];
+
     const YYC_CONTROL_ZONE = [
-      { name: "Control Zone", radius: 12964, rawElevation: 1084, rawCeiling: 928, color: [0, 118, 255] },
-      { name: "TCA Inner", radius: 27780, rawElevation: 1463, rawCeiling: 4023, color: [230, 50, 50] },
-      { name: "TCA Middle", radius: 37040, rawElevation: 1676, rawCeiling: 3810, color: [230, 120, 50] },
-      { name: "TCA Outer", radius: 55560, rawElevation: 2438, rawCeiling: 3048, color: [230, 200, 50] }
+        { 
+            id: "yyc-cz", group: "CZ-YYC", name: "CYYC Control Zone", type: "CZ", 
+            radius: 7 * NM_TO_M, startAngle: 0, endAngle: 360, 
+            rawElevation: 1084, rawCeiling: 2011, color: [100, 118, 100] // 1084m〜2011m (6600ft ASL)
+        },
+        { 
+            id: "ybw-cz", group: "CZ-YBW", name: "CYBW Springbank Control Zone", type: "CYBW_CZ", 
+            radius: 5 * NM_TO_M, startAngle: 0, endAngle: 360, 
+            rawElevation: 1194, rawCeiling: 1676, color: [0, 200, 100] 
+        },
+        // airspaceData 内の TCA_INNER_UNIFIED の定義例
+        {
+            type: "TCA_INNER_UNIFIED",
+            color: [0, 0 , 128] // 空域の色
+        }
     ];
 
-    function generateAirspaceCircle(center, radiusMeters, rawElevation, pointsCount = 64) {
+
+    function generateYYCControlZone(center, radiusMeters, startAngleDeg, endAngleDeg, elevationZ, pointsCount = 64) {
       const coordinates = [];
       const km = radiusMeters / 1000;
       const latFactor = km / 111.32;
       const lonFactor = km / (40075 * Math.cos(center[1] * Math.PI / 180) / 360);
 
-      for (let i = 0; i < pointsCount; i++) {
-        const angle = (i / pointsCount) * Math.PI * 2;
-        const lon = center[0] + Math.cos(angle) * lonFactor;
-        const lat = center[1] + Math.sin(angle) * latFactor;
-        coordinates.push([lon, lat, rawElevation]);
+      const startRad = ((90 - endAngleDeg) * Math.PI) / 180;
+      const endRad = ((90 - startAngleDeg) * Math.PI) / 180;
+      const angleRange = endRad - startRad;
+      const isFullCircle = Math.abs(endAngleDeg - startAngleDeg) >= 360;
+
+      if (!isFullCircle) coordinates.push([center[0], center[1], elevationZ]);
+
+      for (let i = 0; i <= pointsCount; i++) {
+          const angle = startRad + (i / pointsCount) * angleRange;
+          const lon = center[0] + Math.cos(angle) * lonFactor;
+          const lat = center[1] + Math.sin(angle) * latFactor;
+          coordinates.push([lon, lat, elevationZ]);
       }
-      coordinates.push([coordinates[0][0], coordinates[0][1], rawElevation]); 
+
+      if (!isFullCircle) coordinates.push([center[0], center[1], elevationZ]);
+      else coordinates.push([coordinates[0][0], coordinates[0][1], elevationZ]);
+
       return coordinates;
     }
+    
+    function generateYBWControlZone(center, elevationZ, pointsCount = 64) {
+        const coordinates = [];
+        const radiusMeters = 5 * NM_TO_M;
+        const km = radiusMeters / 1000;
+        const latFactor = km / 111.32;
+        const lonFactor = km / (40075 * Math.cos(center[1] * Math.PI / 180) / 360);
+        const cutLongitude = -114.2833; 
 
-    async function loadInitialHistoricalData() {
-      // 📱 iPadOS/iOS/Android を判別できる変数 (isActualMobile) に修正
-      if (isActualMobile) {
-        console.log("📱 モバイル端末のため、ロードを2時間に制限します。");
+        for (let i = 0; i <= pointsCount; i++) {
+            const angle = (i * 2 * Math.PI) / pointsCount;
+            let lon = center[0] + Math.cos(angle) * lonFactor;
+            const lat = center[1] + Math.sin(angle) * latFactor;
+
+            if (lon > cutLongitude) lon = cutLongitude;
+            coordinates.push([lon, lat, elevationZ]);
+        }
+        coordinates.push([coordinates[0][0], coordinates[0][1], coordinates[0][2]]);
+        return coordinates;
+    }
+    
+    function generateAccurateTCAInner(center) {
+      const [lonC, latC] = center;
+      const WEST_LIMIT = -114.2833;
+      const turfCenter = turf.point([lonC, latC]);
+
+      const z4800 = 4800 * 0.3048 * EXAGGERATION_FACTOR;
+      const z5500 = 5500 * 0.3048 * EXAGGERATION_FACTOR;
+      const z6600 = 6600 * 0.3048 * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+
+      const outerCircle = turf.circle(turfCenter, 15 * 1.852, { units: 'kilometers', steps: 64 });
+      const innerCircle = turf.circle(turfCenter, 7 * 1.852, { units: 'kilometers', steps: 64 });
+      const westCutter = turf.bboxPolygon([-116.0, latC - 1.5, WEST_LIMIT, latC + 1.5]);
+
+      const polyPart3 = outerCircle; // 最上層
+      const polyPart2 = turf.difference(outerCircle, innerCircle); // 中層
+      const polyPart1 = turf.difference(polyPart2, westCutter); // 下層
+
+      const horizontalFeatures = [];
+      const verticalFeatures = []; // 💡 ここにきれいな垂直壁データを格納します
+
+      // 補助関数: 指定した2Dライン（リング等）から、下限(zBottom)から上限(zTop)までの壁を生成する
+      function buildWallFromLine(geojsonLine, zBottom, zTop) {
+        // 安全のために追加
+        if (!geojsonLine) return;
+        const geom = geojsonLine.geometry || geojsonLine;
+        if (!geom || !geom.coordinates) return;
+
+        const coords = geom.coordinates;
+        
+        // MultiPolygonやPolygonから外周のリング座標を抽出
+        let rings = [];
+        if (geom.type === 'Polygon') {
+          rings = coords;
+        } else if (geom.type === 'MultiPolygon') {
+          rings = coords.flat(1);
+        } else {
+          rings = [coords];
+        }
+        
+        rings.forEach(ring => {
+          if (!Array.isArray(ring) || ring.length < 2) return;
+
+          for (let i = 0; i < ring.length - 1; i++) {
+            const p1 = ring[i];
+            const p2 = ring[i + 1];
+
+            // 💡 解決策：上の2点（zTop）側だけ、緯度経度に極小のオフセットを加えます。
+            // これにより完全な垂直ではなくなり、Deck.glの面消失バグを回避して面が描画されます。
+            const offset = 0.000005; 
+            
+            // 垂直な4点閉路を1枚の壁ポリゴンとして登録
+            verticalFeatures.push({
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [p1[0], p1[1], zBottom],
+                  [p2[0], p2[1], zBottom],
+                  [p2[0] + offset, p2[1] + offset, zTop], // 💡 わずかにずらす
+                  [p1[0] + offset, p1[1] + offset, zTop], // 💡 わずかにずらす
+                  [p1[0], p1[1], zBottom]
+                ]]
+              }
+            });
+          }
+        });
       }
-      const requestHours = isActualMobile ? 2 : 24;
+
+      // --- 💡 垂直な壁をピンポイントで生成する ---
       
+      // 1. 【外周壁 (15マイル円)】: 4800ft（底面）から 12500ft（天井）まで一気に通す
+      // ※西側のカット部分を除くため、polyPart1の外周（またはpolyPart2の外周）を利用します
+      buildWallFromLine(polyPart3, z6600, z12500); // 15マイル円の最上部壁
+      buildWallFromLine(polyPart2, z5500, z6600);   // 15マイル円の中段壁
+      buildWallFromLine(polyPart1, z4800, z5500);   // 西側カットを反映した下段の外周壁
+
+      // 2. 【内周壁 (7マイル円)】: 4800ft から 6600ft まで
+      buildWallFromLine(innerCircle, z4800, z6600);
+
+      // 3. 【ウエストリミットのカットラインの壁（西側のスパッと切れた断面）】: 4800ft から 5500ft まで
+      // 西側カッター（westCutter）とouterCircleの交点部分に自動で壁が作られます（polyPart1の境界線から抽出されるため不要な設定なしで自動補完されます）
+
+
+      // --- 水平な面（床・天井・段差）の生成 ---
+      function createHorizontalFace(polygon, z) {
+        if (!polygon) return;
+        const geom = polygon.geometry || polygon;
+        const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+        polys.forEach(rings => {
+          const coords3d = rings.map(ring => ring.map(pt => [pt[0], pt[1], z]));
+          horizontalFeatures.push({
+            type: "Feature",
+            geometry: {
+              type: "Polygon",
+              coordinates: coords3d
+            }
+          });
+        });
+      }
+
+      // 水平面の生成（床・段差・天井）
+      createHorizontalFace(polyPart1, z4800);     // 4800ft 底面
+      createHorizontalFace(innerCircle, z6600);    // 6600ft 内側天井蓋
+      createHorizontalFace(polyPart3, z12500);    // 12500ft 最上部天井
+
+      // 5500ftの段差（polyPart2からpolyPart1を引いたドーナツ状の段差部分）
+      const step5500 = turf.difference(polyPart2, polyPart1);
+      createHorizontalFace(step5500, z5500);
+
+      return {
+        horizontal: turf.featureCollection(horizontalFeatures),
+        vertical: turf.featureCollection(verticalFeatures) // 💡 綺麗な3D壁ポリゴン一式
+      };
+    }
+
+    function generateAccurateTCAMiddle(center) {
+      const [lonC, latC] = center;
+      const turfCenter = turf.point([lonC, latC]);
+
+      // 高度（メートル換算・倍率適用）
+      const z5500 = 5500 * 0.3048 * EXAGGERATION_FACTOR;
+      const z6000 = 6000 * 0.3048 * EXAGGERATION_FACTOR;
+      const z8000 = 8000 * 0.3048 * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+
+      // 1. 各種ベース円（マイル → キロメートル換算）
+      const circle15 = turf.circle(turfCenter, 15 * 1.852, { units: 'kilometers', steps: 64 });
+      const circle20 = turf.circle(turfCenter, 20 * 1.852, { units: 'kilometers', steps: 64 });
+      const circle24 = turf.circle(turfCenter, 24 * 1.852, { units: 'kilometers', steps: 64 });
+
+      // 2. 方位角セクター（236.5度 〜 326.5度）の生成
+      const sectorWest = turf.sector(turfCenter, 24 * 1.852, 236.5, 326.5, { units: 'kilometers', steps: 64 });
+
+      // --- 💡 修正：古いTurf.js仕様に合わせ、featureCollectionを使用せず直接2つを引数にします ---
+      // パーツA: 半径15NM〜20NM、高度5500ft〜12500ft のドーナツ
+      const polyPartA = turf.difference(circle20, circle15);
+
+      // パーツB: 半径20NM〜24NM、高度6000ft〜8000ft の扇形ドーナツ
+      const ring20_24 = turf.difference(circle24, circle20);
+      
+      // 💡 修正：交点抽出も古いTurf.jsに合わせて、1対1の直接の引数にします
+      const polyPartB = turf.intersect(ring20_24, sectorWest);
+
+
+      const horizontalFeatures = [];
+      const verticalFeatures = [];
+
+      // 3. 極小オフセット対応の壁生成関数
+      function buildWallFromLine(geojsonLine, zBottom, zTop) {
+        if (!geojsonLine) return;
+        const geom = geojsonLine.geometry || geojsonLine;
+        if (!geom || !geom.coordinates) return;
+
+        const coords = geom.coordinates;
+        let rings = [];
+        if (geom.type === 'Polygon') {
+          rings = coords;
+        } else if (geom.type === 'MultiPolygon') {
+          rings = coords.flat(1);
+        } else {
+          rings = [coords];
+        }
+
+        rings.forEach(ring => {
+          if (!Array.isArray(ring) || ring.length < 2) return;
+
+          for (let i = 0; i < ring.length - 1; i++) {
+            const p1 = ring[i];
+            const p2 = ring[i + 1];
+
+            // 垂直面消失バグを防ぐため、上空側の座標に極小のオフセットをブレンド
+            const offset = 0.000005;
+
+            verticalFeatures.push({
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [p1[0], p1[1], zBottom],
+                  [p2[0], p2[1], zBottom],
+                  [p2[0] + offset, p2[1] + offset, zTop],
+                  [p1[0] + offset, p1[1] + offset, zTop],
+                  [p1[0], p1[1], zBottom]
+                ]]
+              }
+            });
+          }
+        });
+      }
+
+      // --- 垂直な壁の生成 ---
+      buildWallFromLine(polyPartA, z5500, z12500);
+      buildWallFromLine(polyPartB, z6000, z8000);
+
+
+      // --- 水平な面（床・天井）の生成 ---
+      function createHorizontalFace(polygon, z) {
+        if (!polygon) return;
+        const geom = polygon.geometry || polygon;
+        const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+        polys.forEach(rings => {
+          const coords3d = rings.map(ring => ring.map(pt => [pt[0], pt[1], z]));
+          horizontalFeatures.push({
+            type: "Feature",
+            geometry: {
+              type: "Polygon",
+              coordinates: coords3d
+            }
+          });
+        });
+      }
+
+      // --- 水平面データのマッピング ---
+      createHorizontalFace(polyPartA, z5500);
+      createHorizontalFace(polyPartA, z12500);
+
+      createHorizontalFace(polyPartB, z6000);
+      createHorizontalFace(polyPartB, z8000);
+
+      return {
+        horizontal: turf.featureCollection(horizontalFeatures),
+        vertical: turf.featureCollection(verticalFeatures)
+      };
+    }
+
+    function generateAccurateTCAOuter(center) {
+      const [lonC, latC] = center;
+      const turfCenter = turf.point([lonC, latC]);
+
+      // 高度（メートル換算・倍率適用）
+      const z8000 = 8000 * 0.3048 * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+
+      // 1. 各種ベース円（マイル → キロメートル換算）
+      // Outerは半径24NMから30NMまでのドーナツ領域
+      const circle24 = turf.circle(turfCenter, 20 * 1.852, { units: 'kilometers', steps: 64 });
+      const circle30 = turf.circle(turfCenter, 30 * 1.852, { units: 'kilometers', steps: 64 });
+
+      // 2. 2Dドーナツポリゴン（Outer領域）の生成
+      const polyOuter = turf.difference(circle30, circle24);
+
+      const horizontalFeatures = [];
+      const verticalFeatures = [];
+
+      // 壁生成用の共通ヘルパー（極小オフセット対応）
+      function buildWallFromLine(geojsonLine, zBottom, zTop) {
+        if (!geojsonLine) return;
+        const geom = geojsonLine.geometry || geojsonLine;
+        if (!geom || !geom.coordinates) return;
+
+        const coords = geom.coordinates;
+        let rings = [];
+        if (geom.type === 'Polygon') {
+          rings = coords;
+        } else if (geom.type === 'MultiPolygon') {
+          rings = coords.flat(1);
+        } else {
+          rings = [coords];
+        }
+
+        rings.forEach(ring => {
+          if (!Array.isArray(ring) || ring.length < 2) return;
+
+          for (let i = 0; i < ring.length - 1; i++) {
+            const p1 = ring[i];
+            const p2 = ring[i + 1];
+
+            // 垂直面消失を防ぐ極小オフセット
+            const offset = 0.000005;
+
+            verticalFeatures.push({
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [[
+                  [p1[0], p1[1], zBottom],
+                  [p2[0], p2[1], zBottom],
+                  [p2[0] + offset, p2[1] + offset, zTop],
+                  [p1[0] + offset, p1[1] + offset, zTop],
+                  [p1[0], p1[1], zBottom]
+                ]]
+              }
+            });
+          }
+        });
+      }
+
+      // --- 垂直な壁の生成 ---
+      // 24NM〜30NM領域の、内壁(24NM)および外壁(30NM)を8,000ftから12,500ftまで作成
+      buildWallFromLine(polyOuter, z8000, z12500);
+
+      // --- 水平な面（床・天井）の生成 ---
+      function createHorizontalFace(polygon, z) {
+        if (!polygon) return;
+        const geom = polygon.geometry || polygon;
+        const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+        polys.forEach(rings => {
+          const coords3d = rings.map(ring => ring.map(pt => [pt[0], pt[1], z]));
+          horizontalFeatures.push({
+            type: "Feature",
+            geometry: {
+              type: "Polygon",
+              coordinates: coords3d
+            }
+          });
+        });
+      }
+
+      // 水平床（8,000ft）と水平天井（12,500ft）の登録
+      createHorizontalFace(polyOuter, z8000);
+      createHorizontalFace(polyOuter, z12500);
+
+      return {
+        horizontal: turf.featureCollection(horizontalFeatures),
+        vertical: turf.featureCollection(verticalFeatures)
+      };
+    }
+
+    // 過去ログの取得
+    async function loadInitialHistoricalData() {
+      const requestHours = isActualMobile ? 2 : 24;
       try {
         console.log(`⏳ Loading ${requestHours} hours of history from server...`);
         const response = await fetch(`${HTTP_BASE}/api/history?hours=${requestHours}`);
@@ -687,6 +1016,7 @@
 
       if (msg.lat !== undefined && msg.lon !== undefined) {
         let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
+        if (isNaN(adjustedAlt)) adjustedAlt = 0; 
         const newCoord = [msg.lon, msg.lat, adjustedAlt];
               
         let correctTs = Number(msg.ts);
@@ -738,7 +1068,6 @@
 
       closeDetailPanel();
       
-      // ✨ 判定を関数の最初に行うようにします
       const minRange = isActualMobile ? -2 : -24;
 
       if (mode === 'realtime' || mode === 'live') { 
@@ -759,7 +1088,7 @@
         currentArchiveData = [];
         deckOverlay.setProps({ layers: [] });
         rangeSlider.noUiSlider.updateOptions({
-          range: { 'min': minRange, 'max': 0 }, // ✨ ここを minRange に変更
+          range: { 'min': minRange, 'max': 0 }, 
           padding: [0, 0],
           start: [0, 0]
         });
@@ -855,9 +1184,8 @@
       }
     }
 
-    // 【新規・統合】タイムバー下部の相対時間ラベル（-24h等）と絶対時刻を動的に更新する関数
     function updateAbsoluteTimeLabels() {
-      let minRange = -24; 
+      let minRange = isActualMobile ? -2 : -24; 
       if (rangeSlider && rangeSlider.noUiSlider) {
         const options = rangeSlider.noUiSlider.options;
         if (options && options.range && typeof options.range.min === 'number') {
@@ -865,13 +1193,14 @@
         }
       }
 
-      // 相対時間ラベル（-24h / -2h）の書き換え
-      const minLabelEl = document.getElementById('label-min-range');
-      if (minLabelEl) {
-        minLabelEl.innerText = `${minRange}h`;
-      }
+      const targetIds = ['label-left-time', 'label-min-range'];
+      targetIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.innerText = `${minRange}h:`;
+        }
+      });
 
-      // 基準時刻の決定
       let baseTime = Date.now();
       if (viewMode === 'archive' && currentArchiveData.length > 0) {
         let maxTs = Math.max(...currentArchiveData.map(d => d.ts));
@@ -879,7 +1208,6 @@
         baseTime = maxTs;
       }
 
-      // 最小レンジ（最古）と現在（最新）の絶対時刻を計算
       const minAbsoluteTime = baseTime + (minRange * 60 * 60 * 1000);
       const maxAbsoluteTime = baseTime;
 
@@ -890,8 +1218,25 @@
       if (endEl) endEl.innerText = formatToCalgaryTime(maxAbsoluteTime);
     }
 
-    // 1秒ごとの定期処理
-    // 1秒ごとの定期処理
+    // UIから空域のON/OFF（チェックボックス等）が叩かれた際に呼び出すハンドラー
+    function toggleAirspace(key) {
+      if (airspaceVisibility[key] !== undefined) {
+        // フラグを反転
+        airspaceVisibility[key] = !airspaceVisibility[key];
+        
+        // ボタンのスタイルクラス（active）をトグル切り替え
+        const btn = document.getElementById(`btn-airspace-${key}`);
+        if (btn) {
+          btn.classList.toggle('active', airspaceVisibility[key]);
+        }
+        
+        // Deck.gl Overlayを再描画
+        if (typeof deckOverlay !== 'undefined') {
+          deckOverlay.setProps({});
+        }
+      }
+    }
+
     setInterval(() => {
       let baseTime = Date.now();
       
@@ -901,24 +1246,20 @@
         if (maxTs < 10000000000) maxTs *= 1000;
         baseTime = maxTs;
       } else {
-        // ① 先にスライダーの現在値を取得
         if (rangeSlider && rangeSlider.noUiSlider) {
           const currentValues = rangeSlider.noUiSlider.get(true);
           sliderStartHours = currentValues[0];
           sliderEndHours = currentValues[1];
         }
 
-        // ② 時刻とラベルの更新処理
         updateAbsoluteTimeLabels();
 
-        // 💡【ここを追加】ライブラリの自動描画に負けないよう、毎秒ここで確実に minRange の値で上書きする！
         const minRange = isActualMobile ? -2 : -24;
         const leftLabel = document.getElementById('label-left-time');
         if (leftLabel) {
-          leftLabel.innerText = `${minRange}h:`; // 変数 minRange の値を使って表示
+          leftLabel.innerText = `${minRange}h:`; 
         }
 
-        // ③ スライダーのノブのツールチップ更新
         const tooltips = rangeSlider.querySelectorAll('.noUi-handle .noUi-tooltip');
         if (tooltips.length === 2) {
           const startTimeStamp = baseTime + (sliderStartHours * 60 * 60 * 1000);
@@ -931,11 +1272,9 @@
       const timeLimitStart = (viewMode === 'live') ? (baseTime - 24 * 60 * 60 * 1000) : (baseTime + (sliderStartHours * 60 * 60 * 1000));
       const timeLimitEnd = (viewMode === 'live') ? (baseTime + 10 * 1000) : (baseTime + (sliderEndHours * 60 * 60 * 1000));
 
-      // 先に描画用のデータ配列を初期化（処理順序のエラーを防ぐため最上部に配置）
       let activePathsArray = [];
       let currentPositionsArray = []; 
 
-      // iPadを含むモバイル端末ならメモリ保持限界（お掃除スパン）を2時間、PCなら24時間にする
       const maxMemoryRetentionHours = isActualMobile ? 2 : 24;
 
       for (const id in liveFlightPaths) {
@@ -988,12 +1327,15 @@
               activePathsArray.push({
                 id: id,
                 path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => pt.rawAlt)
+                rawAltitudes: displayPoints.map(pt => pt.rawAlt) 
               });
             }
           }
         } 
         else {
+          let hasValidPositionForMarker = false;
+          let bestMarkerPt = null;
+
           aircraft.segments.forEach(segment => {
             const displayPoints = segment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
 
@@ -1001,33 +1343,319 @@
               activePathsArray.push({
                 id: id,
                 path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => pt.rawAlt)
+                rawAltitudes: displayPoints.map(pt => pt.rawAlt) 
               });
+              
+              if (!hasValidPositionForMarker) {
+                bestMarkerPt = displayPoints[displayPoints.length - 1];
+                hasValidPositionForMarker = true;
+              }
             }
           });
+
+          if (hasValidPositionForMarker && bestMarkerPt) {
+            const lon = Number(bestMarkerPt.pos[0]);
+            const lat = Number(bestMarkerPt.pos[1]);
+            const rawAlt = (bestMarkerPt.rawAlt !== undefined && !isNaN(bestMarkerPt.rawAlt)) ? Number(bestMarkerPt.rawAlt) : 0;
+            if (!isNaN(lon) && !isNaN(lat)) {
+              const headingAngle = aircraft.track ? parseFloat(aircraft.track) : 0;
+              currentPositionsArray.push({
+                id: id,
+                pos: [lon, lat, rawAlt * EXAGGERATION_FACTOR],
+                rawAlt: rawAlt,
+                angle: isNaN(headingAngle) ? 0 : headingAngle
+              });
+            }
+          }
         }
       }
 
+      // 5つのゾーンのおすすめカラーセット（定数定義）
+      const AIRSPACE_COLORS = {
+        CYBW_CZ: [203, 152, 0],     
+        CYYC_CZ: [152, 203, 0],     
+        TCA_INNER: [255, 100, 100], 
+        TCA_MIDDLE: [0, 200, 50],  
+        TCA_OUTER: [100, 100, 255]  
+      };
+
       const airspaceData = (typeof YYC_CONTROL_ZONE !== 'undefined') ? YYC_CONTROL_ZONE : [];
+
+      // 一般空域レイヤー（CYYC_CZ および CYBW_CZ の制御）
       const airspaceLayer = new deck.PolygonLayer({
         id: 'yyc-airspace-layer',
-        data: airspaceData,
-        getPolygon: d => generateAirspaceCircle(YYC_CENTER, d.radius, d.rawElevation * EXAGGERATION_FACTOR),
+        data: airspaceData.filter(d => {
+          if (d.type === "TCA_INNER_UNIFIED") return false;
+          if (d.type === "CYBW_CZ" && !airspaceVisibility["CYBW_CZ"]) return false;
+          if (d.type === "CZ" && !airspaceVisibility["CYYC_CZ"]) return false;
+          return true;
+        }), 
+        
+        getPolygon: d => {
+            const zOffset = d.rawElevation * EXAGGERATION_FACTOR;
+            
+            if (d.type === "CYBW_CZ") {
+                return generateYBWControlZone(CYBW_CENTER, zOffset);
+            }
+            if (d.type === "TCA_INNER_UNIFIED") {
+                return generateAccurateTCAInner(CYYC_CENTER);
+            }
+            if (d.type === "TCA_FULL_CYLINDER") {
+                return generateYYCControlZone(CYYC_CENTER, d.radius, 0, 359.99, zOffset);
+            }
+            if (d.type === "TCA_PURE_DONUT") {
+                return generateDonutArc(CYYC_CENTER, d.innerRadius, d.outerRadius, 0, 359.99, zOffset);
+            }
+            
+            return generateYYCControlZone(CYYC_CENTER, d.radius, d.startAngle, d.endAngle, zOffset);
+        },
+        
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
         extruded: true,                                    
-        getElevation: d => d.rawCeiling * EXAGGERATION_FACTOR, 
-        getFillColor: d => [...d.color, Math.round(AIRSPACE_OPACITY * 255)],          
-        getLineColor: d => [...d.color, Math.round(AIRSPACE_OPACITY * 1.5 * 255)],         
-        getLineWidth: 2,
-        wireframe: true,                                  
-        pickable: false,
+        getElevation: d => (d.rawCeiling - d.rawElevation) * EXAGGERATION_FACTOR, 
+        
+        // 【修正】データ側の type（CZ または CYBW_CZ）に応じて AIRSPACE_COLORS から色を取得（フォールバック付き）
+        getFillColor: d => {
+          const colorKey = d.type === "CZ" ? "CYYC_CZ" : d.type;
+          const color = AIRSPACE_COLORS[colorKey] || d.color || [255, 255, 255];
+          return [...color, Math.round(AIRSPACE_OPACITY * 255)];
+        },          
+        
+        stroked: false, 
         _lighting: 'flat', 
-        parameters: { depthTest: true, blend: true, cull: false },
+        
+        parameters: { 
+          depthTest: true, 
+          depthMask: true, 
+          blend: true, 
+          cull: true 
+        },
         updateTriggers: {
-          getPolygon: [EXAGGERATION_FACTOR],     
-          getElevation: [EXAGGERATION_FACTOR],
-          getFillColor: [AIRSPACE_OPACITY], 
-          getLineColor: [AIRSPACE_OPACITY]
+            data: [airspaceVisibility["CYBW_CZ"], airspaceVisibility["CYYC_CZ"]],
+            getPolygon: [EXAGGERATION_FACTOR],     
+            getElevation: [EXAGGERATION_FACTOR],
+            getFillColor: [AIRSPACE_OPACITY], 
+            getLineColor: [AIRSPACE_OPACITY]
+        }
+      });
+
+      // ==========================================
+      // 1. TCA_INNER レイヤーの作成
+      // ==========================================
+      const tcaColor = AIRSPACE_COLORS["TCA_INNER"];
+      const tca3DData = generateAccurateTCAInner(CYYC_CENTER);
+      const isInnerVisible = airspaceVisibility ? airspaceVisibility["TCA_INNER"] : true;
+      const alpha = isInnerVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
+
+      // TCA_INNER 水平面
+      const tcaHorizontalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-inner-horizontal-layer',
+        data: (tca3DData && tca3DData.horizontal) ? tca3DData.horizontal.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaColor, alpha],          
+        stroked: true, 
+        getLineColor: [...tcaColor, Math.min(255, alpha * 1.5)], 
+        getLineWidth: 2,
+        lineWidthMinPixels: 1,
+        visible: isInnerVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true, 
+          cull: false       
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isInnerVisible],
+            getLineColor: [AIRSPACE_OPACITY, isInnerVisible]
+        }
+      });
+
+      // TCA_INNER 垂直面（壁）
+      const tcaVerticalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-inner-vertical-layer',
+        data: (tca3DData && tca3DData.vertical) ? tca3DData.vertical.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaColor, Math.round(alpha * 0.4)], 
+        stroked: false, 
+        getLineColor: [...tcaColor, Math.round(alpha * 0.7)],
+        getLineWidth: 1,
+        lineWidthMinPixels: 1,
+        visible: isInnerVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true,
+          cull: false 
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isInnerVisible],
+            getLineColor: [AIRSPACE_OPACITY, isInnerVisible]
+        }
+      });
+
+      // ==========================================
+      // 2. TCA_MIDDLE レイヤーの作成
+      // ==========================================
+      // 【修正】定数 AIRSPACE_COLORS から取得するように変更
+      const tcaMiddleColor = AIRSPACE_COLORS["TCA_MIDDLE"]; 
+      const tcaMiddle3DData = generateAccurateTCAMiddle(CYYC_CENTER);
+      const isMiddleVisible = airspaceVisibility ? airspaceVisibility["TCA_MIDDLE"] : true;
+      const middleAlpha = isMiddleVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
+
+      // TCA_MIDDLE 水平面
+      const tcaMiddleHorizontalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-middle-horizontal-layer',
+        data: (tcaMiddle3DData && tcaMiddle3DData.horizontal) ? tcaMiddle3DData.horizontal.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaMiddleColor, middleAlpha],          
+        stroked: true, 
+        getLineColor: [...tcaMiddleColor, Math.min(255, middleAlpha * 1.5)], 
+        getLineWidth: 2,
+        lineWidthMinPixels: 1,
+        visible: isMiddleVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true, 
+          cull: false       
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isMiddleVisible],
+            getLineColor: [AIRSPACE_OPACITY, isMiddleVisible] // 【修正】線の色の変化トリガーを追加
+        }
+      });
+
+      // TCA_MIDDLE 垂直面（壁）
+      const tcaMiddleVerticalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-middle-vertical-layer',
+        data: (tcaMiddle3DData && tcaMiddle3DData.vertical) ? tcaMiddle3DData.vertical.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaMiddleColor, Math.round(middleAlpha * 0.4)], 
+        stroked: false, 
+        visible: isMiddleVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true,
+          cull: false 
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isMiddleVisible], // 【修正】isInnerVisible から isMiddleVisible へ修正
+            getLineColor: [AIRSPACE_OPACITY, isMiddleVisible]  // 【修正】isInnerVisible から isMiddleVisible へ修正
+        }
+      });
+
+      // ==========================================
+      // 3. TCA_OUTER レイヤーの作成
+      // ==========================================
+      // 【修正】定数 AIRSPACE_COLORS から取得するように変更
+      const tcaOuterColor = AIRSPACE_COLORS["TCA_OUTER"]; 
+      const tcaOuter3DData = generateAccurateTCAOuter(CYYC_CENTER);
+      const isOuterVisible = airspaceVisibility ? airspaceVisibility["TCA_OUTER"] : true;
+      const outerAlpha = isOuterVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
+
+      // TCA_OUTER 水平面
+      const tcaOuterHorizontalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-outer-horizontal-layer',
+        // 【修正】安全に horizontal.features を参照するように修正
+        data: (tcaOuter3DData && tcaOuter3DData.horizontal) ? tcaOuter3DData.horizontal.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaOuterColor, outerAlpha],          
+        stroked: true, 
+        getLineColor: [...tcaOuterColor, Math.min(255, outerAlpha * 1.5)], 
+        getLineWidth: 2,
+        lineWidthMinPixels: 1,
+        visible: isOuterVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true, 
+          cull: false       
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isOuterVisible],
+            getLineColor: [AIRSPACE_OPACITY, isOuterVisible]
+        }
+      });
+
+      // TCA_OUTER 垂直面（壁）
+      const tcaOuterVerticalLayer = new deck.PolygonLayer({
+        id: 'yyc-tca-outer-vertical-layer',
+        data: (tcaOuter3DData && tcaOuter3DData.vertical) ? tcaOuter3DData.vertical.features : [],            
+        getPolygon: f => f.geometry.coordinates, 
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
+        extruded: false,                                    
+        _polygon3d: true, 
+        getFillColor: [...tcaOuterColor, Math.round(outerAlpha * 0.4)], 
+        stroked: false, 
+        visible: isOuterVisible,
+        _lighting: 'flat',   
+        parameters: { 
+          depthTest: true, 
+          depthMask: false, 
+          blend: true,
+          cull: false 
+        },
+        updateTriggers: {
+            data: [EXAGGERATION_FACTOR], 
+            getFillColor: [AIRSPACE_OPACITY, isOuterVisible],
+            getLineColor: [AIRSPACE_OPACITY, isOuterVisible] // 【修正】線の色の変化トリガーを追加
+        }
+      });
+
+      const markerLayer = new deck.ScatterplotLayer({
+        id: 'aircraft-3d-marker-layer',
+
+        data: (viewMode === 'live') ? currentPositionsArray : [],
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
+        getPosition: d => d.pos, 
+        radiusUnits: 'pixels',
+        getRadius: d => d.id === selectedAircraftId ? (currentLineWidth * 6) : (currentLineWidth * 3), 
+        billboard: true, 
+        stroked: true,
+        filled: true,
+        getFillColor: d => getColorByAltitude(d.rawAlt),
+        getLineColor: [255, 255, 255, 255], 
+        getLineWidth: d => d.id === selectedAircraftId ? 3 : 1.5, 
+        lineWidthUnits: 'pixels',
+        pickable: true,
+        parameters: { depthTest: false, depthMask: false, blend: true },
+        onClick: info => {
+          if (info.object) {
+            selectedAircraftId = info.object.id; 
+            updateDetailPanel(info.object.id);   
+          }
+        },
+        updateTriggers: {
+          data: [viewMode, currentPositionsArray],
+          getPosition: [currentPositionsArray], 
+          getRadius: [selectedAircraftId, currentLineWidth], 
+          getLineWidth: [selectedAircraftId]
         }
       });
 
@@ -1061,35 +1689,6 @@
         }
       });
 
-      const markerLayer = new deck.ScatterplotLayer({
-        id: 'aircraft-3d-marker-layer',
-        data: currentPositionsArray,
-        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
-        getPosition: d => d.pos, 
-        radiusUnits: 'pixels',
-        getRadius: d => d.id === selectedAircraftId ? (currentLineWidth * 6) : (currentLineWidth * 3), 
-        billboard: true, 
-        stroked: true,
-        filled: true,
-        getFillColor: d => getColorByAltitude(d.rawAlt),
-        getLineColor: [255, 255, 255, 255], 
-        getLineWidth: d => d.id === selectedAircraftId ? 3 : 1.5, 
-        lineWidthUnits: 'pixels',
-        pickable: true,
-        parameters: { depthTest: false, depthMask: false, blend: true },
-        onClick: info => {
-          if (info.object) {
-            selectedAircraftId = info.object.id; 
-            updateDetailPanel(info.object.id);   
-          }
-        },
-        updateTriggers: {
-          getPosition: [currentPositionsArray], 
-          getRadius: [selectedAircraftId, currentLineWidth], 
-          getLineWidth: [selectedAircraftId]
-        }
-      });
-
       const activeRunwaysData = YYC_RUNWAYS.filter(rwy => rwy.active);
       
       const runwayLayer = new deck.PathLayer({
@@ -1108,9 +1707,22 @@
         }
       });
 
+      const currentLayers = [
+        pathLayer, 
+        markerLayer, 
+        runwayLayer, 
+        tcaHorizontalLayer, 
+        tcaVerticalLayer, 
+        tcaMiddleHorizontalLayer,
+        tcaMiddleVerticalLayer,
+        tcaOuterHorizontalLayer,
+        tcaOuterVerticalLayer,
+        airspaceLayer
+      ];
+
       if (typeof deckOverlay !== 'undefined') {
         deckOverlay.setProps({ 
-          layers: [pathLayer, airspaceLayer, markerLayer, runwayLayer] 
+          layers: currentLayers 
         });
       }
 
@@ -1125,7 +1737,7 @@
     function updateExaggeration(val) {
       EXAGGERATION_FACTOR = parseInt(val);
       document.getElementById('exag-val').innerText = val;
-      if (map.getSource('aws-terrain')) {
+      if (map && map.getSource('aws-terrain')) {
         map.setTerrain({ source: 'aws-terrain', exaggeration: EXAGGERATION_FACTOR });
       }
     }
