@@ -231,8 +231,8 @@
       </div>
       
       <div class="panel-section">
-        <label>🌐 Control Zone: <span id="airspace-opacity-val">0</span>%</label>
-        <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="0" oninput="updateAirspaceOpacity(this.value)">
+        <label>🌐 Control Zone: <span id="airspace-opacity-val">10</span>%</label>
+        <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="10" oninput="updateAirspaceOpacity(this.value)">
         
         <!-- YBW-CZ / YYC-CZ トグルボタン -->
         <div class="btn-group-2" style="margin-top: 8px; margin-bottom: 6px;">
@@ -242,9 +242,9 @@
         
         <!-- Inner / Middle / Outer トグルボタン -->
         <div class="btn-group">
-          <button id="btn-airspace-TCA_INNER" class="btn rwy-btn active" onclick="toggleAirspace('TCA_INNER')">Inner</button>
-          <button id="btn-airspace-TCA_MIDDLE" class="btn rwy-btn active" onclick="toggleAirspace('TCA_MIDDLE')">Middle</button>
-          <button id="btn-airspace-TCA_OUTER" class="btn rwy-btn active" onclick="toggleAirspace('TCA_OUTER')">Outer</button>
+          <button id="btn-airspace-TCA_INNER" class="btn rwy-btn" onclick="toggleAirspace('TCA_INNER')">Inner</button>
+          <button id="btn-airspace-TCA_MIDDLE" class="btn rwy-btn" onclick="toggleAirspace('TCA_MIDDLE')">Middle</button>
+          <button id="btn-airspace-TCA_OUTER" class="btn rwy-btn" onclick="toggleAirspace('TCA_OUTER')">Outer</button>
         </div>
       </div>
       
@@ -331,14 +331,14 @@
     let YYC_ALTITUDE = 3557; //or 3606
     let YBW_ALTITUDE = 3940
     let EXAGGERATION_FACTOR = 4.0;
-    let AIRSPACE_OPACITY = 0.0; 
+    let AIRSPACE_OPACITY = 0.10; 
   
     let airspaceVisibility = {
         "CYBW_CZ": true,
         "CYYC_CZ": true,
-        "TCA_INNER": true,
-        "TCA_MIDDLE": true,
-        "TCA_OUTER": true
+        "TCA_INNER": false,
+        "TCA_MIDDLE": false,
+        "TCA_OUTER": false
     };
 
     // airport: どの空港の滑走路かを示す（将来YBWの滑走路を追加する際は 'CYBW' を指定する）
