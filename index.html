@@ -5,9 +5,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-  <title>Calgary YYC 3D Radar - Integrated Universal Version</title>
-  <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
-  <script src="https://unpkg.com/@deck.gl/extensions@latest/dist.min.js"></script>
+  <title>YYC Radar</title>
+  <script src="https://unpkg.com/deck.gl@9.1.12/dist.min.js"></script>
+  <script src="https://unpkg.com/@deck.gl/extensions@9.1.12/dist.min.js"></script>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
@@ -265,6 +265,11 @@
         <input type="range" id="exag-slider" min="0" max="8" step="1" value="4" oninput="updateExaggeration(this.value)">
       </div>
 
+      <!-- <div class="panel-section">
+        <label>🏷️ Reduce Place Labels: <span id="label-density-val">4</span></label>
+        <input type="range" id="label-density-slider" min="0" max="4" step="1" value="4" oninput="updateLabelDensity(this.value)">
+      </div> -->
+
       <div class="panel-section">
         <label>🗺️ Map Style</label>
         <div class="btn-group">
@@ -316,10 +321,18 @@
   <div id="map"></div>
 
   <script>
+    const NM_TO_M = 1852;
+    const FT_TO_M = 0.3048;
+
     const YYC_CENTER = [-114.0133, 51.1228];
+    const CYYC_CENTER = [-114.0133, 51.1228]; 
+    const CYBW_CENTER = [-114.3744, 51.1031];
+
+    let YYC_ALTITUDE = 3557; //or 3606
+    let YBW_ALTITUDE = 3940
     let EXAGGERATION_FACTOR = 4.0;
     let AIRSPACE_OPACITY = 0.0; 
-    // 将来のオン・オフ用のフラグ（現時点ではすべて true で固定）
+  
     let airspaceVisibility = {
         "CYBW_CZ": true,
         "CYYC_CZ": true,
@@ -328,13 +341,14 @@
         "TCA_OUTER": true
     };
 
+    // airport: どの空港の滑走路かを示す（将来YBWの滑走路を追加する際は 'CYBW' を指定する）
     let YYC_RUNWAYS = [
-      { id: '11',  center: [-114.03646743029697, 51.126731789097676], heading: 120.142261, active: false, color: [0, 255, 0] },
-      { id: '29',  center: [-114.0063297003938, 51.11574234044246], heading: 360-59.857738, active: false, color: [0, 255, 0] },
-      { id: '17R', center: [-114.02133463605998, 51.13139889952143], heading: 180, active: false, color: [0, 255, 0] },
-      { id: '35L', center: [-114.0213797307343, 51.09665392784393], heading: 0, active: false, color: [0, 255, 0] },
-      { id: '17L', center: [-113.9903239279564, 51.1485966715133], heading: 180, active: false, color: [0, 255, 0] },
-      { id: '35R', center: [-113.99037210622825, 51.110237118893124], heading: 0, active: false, color: [0, 255, 0] }
+      { id: '11',  airport: 'CYYC', center: [-114.03646743029697, 51.126731789097676], heading: 120.142261, active: false, color: [0, 255, 0] },
+      { id: '29',  airport: 'CYYC', center: [-114.0063297003938, 51.11574234044246], heading: 360-59.857738, active: false, color: [0, 255, 0] },
+      { id: '17R', airport: 'CYYC', center: [-114.02133463605998, 51.13139889952143], heading: 180, active: false, color: [0, 255, 0] },
+      { id: '35L', airport: 'CYYC', center: [-114.0213797307343, 51.09665392784393], heading: 0, active: false, color: [0, 255, 0] },
+      { id: '17L', airport: 'CYYC', center: [-113.9903239279564, 51.1485966715133], heading: 180, active: false, color: [0, 255, 0] },
+      { id: '35R', airport: 'CYYC', center: [-113.99037210622825, 51.110237118893124], heading: 0, active: false, color: [0, 255, 0] }
     ];
 
     const currentHost = window.location.hostname;
@@ -427,12 +441,13 @@
 
     let panelTimeout = null;
     const AUTO_COLLAPSE_DELAY = 5000;
+    const HOVER_COLLAPSE_DELAY = 3000;
 
-    function resetPanelTimer() {
+    function resetPanelTimer(delay = AUTO_COLLAPSE_DELAY) {
       clearTimeout(panelTimeout);
       const panel = document.getElementById('control-panel');
       if (panel.classList.contains('collapsed')) return;
-      panelTimeout = setTimeout(() => { panel.classList.add('collapsed'); }, AUTO_COLLAPSE_DELAY);
+      panelTimeout = setTimeout(() => { panel.classList.add('collapsed'); }, delay);
     }
 
     function togglePanel() {
@@ -441,14 +456,31 @@
       if (!panel.classList.contains('collapsed')) { resetPanelTimer(); } else { clearTimeout(panelTimeout); }
     }
 
+    // PC(マウス操作)向け: パネルにカーソルが乗ったら自動展開し、離れたら3秒後に自動格納する。
+    // タブレット等のタッチ操作にはhover概念がないため、この処理は発火しても実害がなく、
+    // 既存のクリックでの開閉（togglePanel）がそのままタッチ操作の主な手段として機能する。
+    function setupPanelHoverBehavior() {
+      const panel = document.getElementById('control-panel');
+      panel.addEventListener('mouseenter', () => {
+        clearTimeout(panelTimeout);
+        panel.classList.remove('collapsed');
+      });
+      panel.addEventListener('mouseleave', () => {
+        resetPanelTimer(HOVER_COLLAPSE_DELAY);
+      });
+    }
+
     let map; 
 
     const deckOverlay = new deck.MapboxOverlay({ 
+      interleaved: true,
       layers: [],
       onClick: (info) => { if (!info.object) { closeDetailPanel(); } }
     });
 
     document.addEventListener("DOMContentLoaded", async () => {
+      setupPanelHoverBehavior();
+
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
@@ -490,6 +522,14 @@
           await loadInitialHistoricalData();
           await loadArchiveList(); 
           map.addControl(deckOverlay);
+
+          // const cameraScript = document.createElement('script');
+          // cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
+          // cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
+          // document.body.appendChild(cameraScript);
+
+
+
       });
     });
 
@@ -525,6 +565,36 @@
         });
       }
       map.setTerrain({ source: 'aws-terrain', exaggeration: EXAGGERATION_FACTOR });
+      applyLabelDensity(); // スタイル切り替え時にも地名の間引き設定を再適用する
+    }
+
+    // 地名ラベルを重要度の低いものから段階的に間引く。
+    // index が小さいほど重要度が低く、スライダーの値が上がるほど手前(重要度が低い方)から非表示にする。
+    // 都市(city / city_large)・州・国のラベルは常に表示のまま残す。
+    const PLACE_LABEL_TIERS = [
+      ['place_other'],   // Lv1: 集落・孤立した家屋・近隣(hamlet / isolated_dwelling / neighbourhood)
+      ['place_suburb'],  // Lv2: 郊外(suburb)
+      ['place_village'], // Lv3: 村(village)
+      ['place_town']     // Lv4: 町(town)
+    ];
+    let labelDensityLevel = 4;
+
+    function applyLabelDensity() {
+      if (!map) return;
+      PLACE_LABEL_TIERS.forEach((ids, idx) => {
+        const shouldHide = idx < labelDensityLevel;
+        ids.forEach(id => {
+          if (map.getLayer(id)) {
+            map.setLayoutProperty(id, 'visibility', shouldHide ? 'none' : 'visible');
+          }
+        });
+      });
+    }
+
+    function updateLabelDensity(val) {
+      labelDensityLevel = parseInt(val);
+      document.getElementById('label-density-val').innerText = labelDensityLevel;
+      applyLabelDensity();
     }
 
     function switchMapStyle(styleName) {
@@ -549,14 +619,68 @@
       ];
     }
 
+    // 現在のマップカメラを基準に、各機体の「カメラからの距離」に応じたサイズ補正倍率を計算する。
+    // deck.glのpixels単位だけではpitch(視点の傾き)による遠近スケールが完全には打ち消されないため、
+    // 画面中心(基準距離)に対する相対距離の逆数を掛けて、近い/遠いマーカーの見た目サイズを揃える。
+    function computeAircraftScaleFactors(positionsArray) {
+      const scales = {};
+      if (!map || positionsArray.length === 0) return scales;
+
+      const container = map.getContainer();
+      const viewport = new deck.WebMercatorViewport({
+        width: container.clientWidth,
+        height: container.clientHeight,
+        longitude: map.getCenter().lng,
+        latitude: map.getCenter().lat,
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing()
+      });
+
+      const cameraPos = viewport.cameraPosition; // [x, y, z] カメラのcommon空間座標
+      const centerCommon = viewport.projectPosition([viewport.longitude, viewport.latitude, 0]);
+      const dist3 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      const refDistance = dist3(cameraPos, centerCommon);
+
+      positionsArray.forEach(d => {
+        const p = viewport.projectPosition(d.pos);
+        const dist = dist3(cameraPos, p);
+        // 遠くのものほど1より大きく、近くのものほど1より小さい倍率になる
+        let scale = dist > 0 ? (dist / refDistance) : 1;
+        // 極端な値で見た目が破綻しないようクランプ
+        scale = Math.min(Math.max(scale, 0.3), 3);
+        scales[d.id] = scale;
+      });
+
+      return scales;
+    }
+
+    // 空港ごとの標高(ft ASL)。将来YBWのアプローチラインを追加する場合は、
+    // 対象の滑走路データに airport: 'CYBW' を設定するだけで、ここから正しい標高が自動的に使われる。
+    const AIRPORT_ELEVATION_FT = {
+      CYYC: YYC_ALTITUDE,
+      CYBW: YBW_ALTITUDE
+    };
+
+    // 保存済みポイントのrawAltを安全に取得する（欠損・NaNの古いデータが混じっていても軌跡描画がNaNで壊れないようにする）
+    function safeAlt(pt) {
+      return (pt.rawAlt !== undefined && !isNaN(pt.rawAlt)) ? Number(pt.rawAlt) : 0;
+    }
+
     // アプローチパスを生成
     function generateApproachLine(rwy, exag) {
       const startLon = rwy.center[0];
       const startLat = rwy.center[1];
-      const airportElevationMeters = 1084+60; 
+      const pathHeightAdjustment = 1;
+      // rwy.airport が未指定の滑走路データが来た場合はCYYCにフォールバック
+      const airportKey = rwy.airport || 'CYYC';
+      const airportElevationFt = AIRPORT_ELEVATION_FT[airportKey] !== undefined
+        ? AIRPORT_ELEVATION_FT[airportKey]
+        : YYC_ALTITUDE;
+      const airportElevationMeters = (airportElevationFt * FT_TO_M) + pathHeightAdjustment;
       const reverseHeadingRad = ((rwy.heading + 180) % 360) * Math.PI / 180;
-      const distanceMeters = 10*1852; 
-      const glideSlopeClimbMeters = distanceMeters * Math.sin(3 * Math.PI / 180);
+      const distanceMeters = 7*NM_TO_M; 
+      const glideSlopeClimbMeters = distanceMeters * Math.sin(3 * Math.PI / 180); //角度３度
       const finalAltitudeMeters = airportElevationMeters + glideSlopeClimbMeters;
 
       const latLengthPerDegree = 111320;
@@ -571,6 +695,18 @@
       ];
     }
 
+    // アプローチラインを高さ方向(Z)にずらしたバージョンを生成する。
+    // 同じラインを複数枚、少しずつ高さをずらして重ねて描画することで、
+    // 真横から見た時にも「厚みのある帯」として視認できるようにする。
+    function generateApproachLineAtZOffset(rwy, exag, zOffsetMeters) {
+      const [start, end] = generateApproachLine(rwy, exag);
+      const dz = zOffsetMeters * exag; // 他の高度表現と同じくEXAGGERATION_FACTORに合わせて拡大縮小する
+      return [
+        [start[0], start[1], start[2] + dz],
+        [end[0], end[1], end[2] + dz]
+      ];
+    }
+
     function toggleRunway(id) {
       const rwy = YYC_RUNWAYS.find(r => r.id === id);
       if (rwy) {
@@ -582,27 +718,17 @@
 
 
     // 管制圏の生成
-    const NM_TO_M = 1852;
-    const FT_TO_M = 0.3048;
-
-    const CYYC_CENTER = [-114.0133, 51.1228]; 
-    const CYBW_CENTER = [-114.3744, 51.1031];
-
+    const ALT_GAP = 1
     const YYC_CONTROL_ZONE = [
         { 
-            id: "yyc-cz", group: "CZ-YYC", name: "CYYC Control Zone", type: "CZ", 
+            id: "yyc-cz", group: "CZ-YYC", name: "CYYC Control Zone", type: "CYYC_CZ", 
             radius: 7 * NM_TO_M, startAngle: 0, endAngle: 360, 
-            rawElevation: 1084, rawCeiling: 2011, color: [100, 118, 100] // 1084m〜2011m (6600ft ASL)
+            rawElevation: YYC_ALTITUDE*FT_TO_M, rawCeiling: (6600-ALT_GAP)*FT_TO_M, color: [100, 118, 100] // 1084m〜2011m (6600ft ASL)
         },
         { 
             id: "ybw-cz", group: "CZ-YBW", name: "CYBW Springbank Control Zone", type: "CYBW_CZ", 
             radius: 5 * NM_TO_M, startAngle: 0, endAngle: 360, 
-            rawElevation: 1194, rawCeiling: 1676, color: [0, 200, 100] 
-        },
-        // airspaceData 内の TCA_INNER_UNIFIED の定義例
-        {
-            type: "TCA_INNER_UNIFIED",
-            color: [0, 0 , 128] // 空域の色
+            rawElevation: YBW_ALTITUDE*FT_TO_M, rawCeiling: (5500-ALT_GAP)*FT_TO_M, color: [0, 200, 100] 
         }
     ];
 
@@ -658,13 +784,13 @@
       const WEST_LIMIT = -114.2833;
       const turfCenter = turf.point([lonC, latC]);
 
-      const z4800 = 4800 * 0.3048 * EXAGGERATION_FACTOR;
-      const z5500 = 5500 * 0.3048 * EXAGGERATION_FACTOR;
-      const z6600 = 6600 * 0.3048 * EXAGGERATION_FACTOR;
-      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+      const z4800 = 4800 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z5500 = 5500 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z6600 = 6600 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * FT_TO_M * EXAGGERATION_FACTOR;
 
-      const outerCircle = turf.circle(turfCenter, 15 * 1.852, { units: 'kilometers', steps: 64 });
-      const innerCircle = turf.circle(turfCenter, 7 * 1.852, { units: 'kilometers', steps: 64 });
+      const outerCircle = turf.circle(turfCenter, 15 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
+      const innerCircle = turf.circle(turfCenter, 7 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
       const westCutter = turf.bboxPolygon([-116.0, latC - 1.5, WEST_LIMIT, latC + 1.5]);
 
       const polyPart3 = outerCircle; // 最上層
@@ -774,18 +900,18 @@
       const turfCenter = turf.point([lonC, latC]);
 
       // 高度（メートル換算・倍率適用）
-      const z5500 = 5500 * 0.3048 * EXAGGERATION_FACTOR;
-      const z6000 = 6000 * 0.3048 * EXAGGERATION_FACTOR;
-      const z8000 = 8000 * 0.3048 * EXAGGERATION_FACTOR;
-      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+      const z5500 = 5500 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z6000 = 6000 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z8000 = 8000 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * FT_TO_M * EXAGGERATION_FACTOR;
 
       // 1. 各種ベース円（マイル → キロメートル換算）
-      const circle15 = turf.circle(turfCenter, 15 * 1.852, { units: 'kilometers', steps: 64 });
-      const circle20 = turf.circle(turfCenter, 20 * 1.852, { units: 'kilometers', steps: 64 });
-      const circle24 = turf.circle(turfCenter, 24 * 1.852, { units: 'kilometers', steps: 64 });
+      const circle15 = turf.circle(turfCenter, 15 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
+      const circle20 = turf.circle(turfCenter, 20 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
+      const circle24 = turf.circle(turfCenter, 24 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
 
       // 2. 方位角セクター（236.5度 〜 326.5度）の生成
-      const sectorWest = turf.sector(turfCenter, 24 * 1.852, 236.5, 326.5, { units: 'kilometers', steps: 64 });
+      const sectorWest = turf.sector(turfCenter, 24 * NM_TO_M/1000, 236.5, 326.5, { units: 'kilometers', steps: 64 });
 
       // --- 💡 修正：古いTurf.js仕様に合わせ、featureCollectionを使用せず直接2つを引数にします ---
       // パーツA: 半径15NM〜20NM、高度5500ft〜12500ft のドーナツ
@@ -884,13 +1010,13 @@
       const turfCenter = turf.point([lonC, latC]);
 
       // 高度（メートル換算・倍率適用）
-      const z8000 = 8000 * 0.3048 * EXAGGERATION_FACTOR;
-      const z12500 = 12500 * 0.3048 * EXAGGERATION_FACTOR;
+      const z8000 = 8000 * FT_TO_M * EXAGGERATION_FACTOR;
+      const z12500 = 12500 * FT_TO_M * EXAGGERATION_FACTOR;
 
       // 1. 各種ベース円（マイル → キロメートル換算）
       // Outerは半径24NMから30NMまでのドーナツ領域
-      const circle24 = turf.circle(turfCenter, 20 * 1.852, { units: 'kilometers', steps: 64 });
-      const circle30 = turf.circle(turfCenter, 30 * 1.852, { units: 'kilometers', steps: 64 });
+      const circle24 = turf.circle(turfCenter, 20 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
+      const circle30 = turf.circle(turfCenter, 30 * NM_TO_M/1000, { units: 'kilometers', steps: 64 });
 
       // 2. 2Dドーナツポリゴン（Outer領域）の生成
       const polyOuter = turf.difference(circle30, circle24);
@@ -1015,9 +1141,14 @@
       }
 
       if (msg.lat !== undefined && msg.lon !== undefined) {
-        let adjustedAlt = msg.alt * EXAGGERATION_FACTOR; 
-        if (isNaN(adjustedAlt)) adjustedAlt = 0; 
-        const newCoord = [msg.lon, msg.lat, adjustedAlt];
+        // rawAlt はここで一度だけNaNガードする（以降の描画では常にこの値 × 現在のEXAGGERATION_FACTORで計算するため、
+        // ここが崩れると軌跡・マーカーとも高度がNaNになり得る）
+        let safeRawAlt = Number(msg.alt);
+        if (isNaN(safeRawAlt)) safeRawAlt = 0;
+        // pos の高度成分は生値（未強調）で保持する。強調係数を焼き込むと、後で
+        // EXAGGERATION_FACTOR を変更した際に「受信時点の係数」が古いまま残ってしまうため。
+        // 実際の描画は常に rawAlt × 現在の EXAGGERATION_FACTOR で計算しており、pos[2] は参照していない。
+        const newCoord = [msg.lon, msg.lat, safeRawAlt];
               
         let correctTs = Number(msg.ts);
         if (correctTs < 10000000000) correctTs *= 1000;
@@ -1029,16 +1160,16 @@
         }
         
         if (currentSegment.length === 0) {
-          currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: correctTs });
+          currentSegment.push({ pos: newCoord, rawAlt: safeRawAlt, time: correctTs });
         } else {
           const lastPoint = currentSegment[currentSegment.length - 1];
           if ((correctTs - lastPoint.time) > 1800 * 1000) {
             aircraft.segments.push([]);
             currentSegment = aircraft.segments[aircraft.segments.length - 1];
-            currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: correctTs });
+            currentSegment.push({ pos: newCoord, rawAlt: safeRawAlt, time: correctTs });
           } else {
             if (lastPoint.pos[0] !== msg.lon || lastPoint.pos[1] !== msg.lat) {
-              currentSegment.push({ pos: newCoord, rawAlt: msg.alt, time: correctTs });
+              currentSegment.push({ pos: newCoord, rawAlt: safeRawAlt, time: correctTs });
             }
           }
         }
@@ -1326,8 +1457,8 @@
             if (displayPoints.length > 1) {
               activePathsArray.push({
                 id: id,
-                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => pt.rawAlt) 
+                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
+                rawAltitudes: displayPoints.map(pt => safeAlt(pt)) 
               });
             }
           }
@@ -1342,8 +1473,8 @@
             if (displayPoints.length > 1) {
               activePathsArray.push({
                 id: id,
-                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], pt.rawAlt * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => pt.rawAlt) 
+                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
+                rawAltitudes: displayPoints.map(pt => safeAlt(pt)) 
               });
               
               if (!hasValidPositionForMarker) {
@@ -1372,11 +1503,11 @@
 
       // 5つのゾーンのおすすめカラーセット（定数定義）
       const AIRSPACE_COLORS = {
-        CYBW_CZ: [203, 152, 0],     
-        CYYC_CZ: [152, 203, 0],     
-        TCA_INNER: [255, 100, 100], 
-        TCA_MIDDLE: [0, 200, 50],  
-        TCA_OUTER: [100, 100, 255]  
+        CYBW_CZ: [0, 170, 255],     
+        CYYC_CZ: [230, 0, 170],     
+        TCA_INNER: [255, 60, 60], 
+        TCA_MIDDLE: [255, 170, 0],  
+        TCA_OUTER: [255, 230, 120]  
       };
 
       const airspaceData = (typeof YYC_CONTROL_ZONE !== 'undefined') ? YYC_CONTROL_ZONE : [];
@@ -1385,9 +1516,8 @@
       const airspaceLayer = new deck.PolygonLayer({
         id: 'yyc-airspace-layer',
         data: airspaceData.filter(d => {
-          if (d.type === "TCA_INNER_UNIFIED") return false;
           if (d.type === "CYBW_CZ" && !airspaceVisibility["CYBW_CZ"]) return false;
-          if (d.type === "CZ" && !airspaceVisibility["CYYC_CZ"]) return false;
+          if (d.type === "CYYC_CZ" && !airspaceVisibility["CYYC_CZ"]) return false;
           return true;
         }), 
         
@@ -1397,17 +1527,10 @@
             if (d.type === "CYBW_CZ") {
                 return generateYBWControlZone(CYBW_CENTER, zOffset);
             }
-            if (d.type === "TCA_INNER_UNIFIED") {
-                return generateAccurateTCAInner(CYYC_CENTER);
+            if (d.type === "CYYC_CZ") {
+                return generateYYCControlZone(CYYC_CENTER, d.radius, d.startAngle, d.endAngle, zOffset);
             }
-            if (d.type === "TCA_FULL_CYLINDER") {
-                return generateYYCControlZone(CYYC_CENTER, d.radius, 0, 359.99, zOffset);
-            }
-            if (d.type === "TCA_PURE_DONUT") {
-                return generateDonutArc(CYYC_CENTER, d.innerRadius, d.outerRadius, 0, 359.99, zOffset);
-            }
-            
-            return generateYYCControlZone(CYYC_CENTER, d.radius, d.startAngle, d.endAngle, zOffset);
+            return [];
         },
         
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT, 
@@ -1416,7 +1539,7 @@
         
         // 【修正】データ側の type（CZ または CYBW_CZ）に応じて AIRSPACE_COLORS から色を取得（フォールバック付き）
         getFillColor: d => {
-          const colorKey = d.type === "CZ" ? "CYYC_CZ" : d.type;
+          const colorKey = d.type === "CYYC_CZ" ? "CYYC_CZ" : d.type;
           const color = AIRSPACE_COLORS[colorKey] || d.color || [255, 255, 255];
           return [...color, Math.round(AIRSPACE_OPACITY * 255)];
         },          
@@ -1628,6 +1751,11 @@
         }
       });
 
+      // カメラ距離に応じたサイズ補正倍率（近い機体は縮小、遠い機体は拡大して見た目のサイズを揃える）
+      const aircraftScaleFactors = computeAircraftScaleFactors(
+        viewMode === 'live' ? currentPositionsArray : []
+      );
+
       const markerLayer = new deck.ScatterplotLayer({
         id: 'aircraft-3d-marker-layer',
 
@@ -1635,13 +1763,19 @@
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
         getPosition: d => d.pos, 
         radiusUnits: 'pixels',
-        getRadius: d => d.id === selectedAircraftId ? (currentLineWidth * 6) : (currentLineWidth * 3), 
+        getRadius: d => {
+          const base = d.id === selectedAircraftId ? (currentLineWidth * 8) : (currentLineWidth * 4);
+          return base * (aircraftScaleFactors[d.id] || 1);
+        }, 
         billboard: true, 
         stroked: true,
         filled: true,
         getFillColor: d => getColorByAltitude(d.rawAlt),
         getLineColor: [255, 255, 255, 255], 
-        getLineWidth: d => d.id === selectedAircraftId ? 3 : 1.5, 
+        getLineWidth: d => {
+          const base = d.id === selectedAircraftId ? 4 : 2;
+          return base * (aircraftScaleFactors[d.id] || 1);
+        }, 
         lineWidthUnits: 'pixels',
         pickable: true,
         parameters: { depthTest: false, depthMask: false, blend: true },
@@ -1654,8 +1788,52 @@
         updateTriggers: {
           data: [viewMode, currentPositionsArray],
           getPosition: [currentPositionsArray], 
-          getRadius: [selectedAircraftId, currentLineWidth], 
-          getLineWidth: [selectedAircraftId]
+          getRadius: [selectedAircraftId, currentLineWidth, aircraftScaleFactors], 
+          getLineWidth: [selectedAircraftId, aircraftScaleFactors]
+        }
+      });
+
+      // ==========================================
+      // コールサインテキストレイヤー (liveモード時のみ表示)
+      // カメラ距離に応じた補正倍率をgetSizeに掛けて、遠近によるサイズの見た目差を打ち消す
+      // ==========================================
+      const callsignTextLayer = new deck.TextLayer({
+        id: 'aircraft-callsigns-layer',
+        data: (viewMode === 'live') ? currentPositionsArray : [],
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
+        getPosition: d => d.pos,
+        getText: d => {
+          const aircraft = flightPaths[d.id];
+          return (aircraft && aircraft.callsign && aircraft.callsign !== 'UNKNOWN') 
+            ? aircraft.callsign 
+            : d.id.toUpperCase();
+        },
+        getSize: d => 16 * (aircraftScaleFactors[d.id] || 1),
+        sizeUnits: 'pixels',
+        sizeScale: 1,
+        billboard: true,
+        getPixelOffset: d => {
+          const s = aircraftScaleFactors[d.id] || 1;
+          return [-20 * s, -18 * s];
+        },
+
+        background: true,
+        getColor: [255, 255, 255, 255],
+        getBackgroundColor: [10, 15, 25, 128],
+        backgroundPadding: [3, 2],
+
+        getTextAnchor: 'start',
+        getAlignmentBaseline: 'center',
+
+        fontFamily: 'monospace',
+        fontWeight: 'bold',
+        characterSet: 'auto',
+        pickable: false,
+        updateTriggers: {
+          data: [viewMode, currentPositionsArray],
+          getPosition: [currentPositionsArray, EXAGGERATION_FACTOR],
+          getSize: [aircraftScaleFactors],
+          getPixelOffset: [aircraftScaleFactors]
         }
       });
 
@@ -1707,17 +1885,47 @@
         }
       });
 
+      // アプローチラインの厚み表現: 元のrunwayLayer(高さ0)はそのまま残し、
+      // そこから上方向にのみ同じリボンを少しずつずらして重ねることで厚みを持たせる。
+      // （PolygonLayerでの平面ポリゴン方式は、始点・終点しかXY座標のバリエーションがなく
+      // 面積0として扱われ描画できなかったため、この「積み重ね」方式に変更した）
+      const APPROACH_THICKNESS_METERS = 20; // 元のラインから上方向にどれだけ厚みを持たせるか
+      const APPROACH_THICKNESS_LAYER_COUNT = 5; // 重ねる枚数（多いほど滑らかだが負荷は上がる）
+
+      const runwayThicknessLayers = [];
+      for (let i = 0; i < APPROACH_THICKNESS_LAYER_COUNT; i++) {
+        // 0(元のラインのすぐ上)〜 APPROACH_THICKNESS_METERS(最上部) の範囲に均等配置
+        const zOffsetMeters = ((i + 1) / APPROACH_THICKNESS_LAYER_COUNT) * APPROACH_THICKNESS_METERS;
+        runwayThicknessLayers.push(new deck.PathLayer({
+          id: `yyc-runway-approach-thickness-layer-${i}`,
+          data: activeRunwaysData,
+          getPath: d => generateApproachLineAtZOffset(d, EXAGGERATION_FACTOR, zOffsetMeters),
+          getColor: d => [...d.color, 154],
+          widthUnits: 'meters',
+          getWidth: 200,
+          jointRounded: true,
+          capRounded: true,
+          pickable: false,
+          parameters: { depthTest: false, depthMask: false },
+          updateTriggers: {
+            getPath: [EXAGGERATION_FACTOR]
+          }
+        }));
+      }
+
       const currentLayers = [
         pathLayer, 
         markerLayer, 
+        callsignTextLayer,
         runwayLayer, 
+        runwayThicknessLayers,
+        airspaceLayer,
         tcaHorizontalLayer, 
         tcaVerticalLayer, 
         tcaMiddleHorizontalLayer,
         tcaMiddleVerticalLayer,
         tcaOuterHorizontalLayer,
         tcaOuterVerticalLayer,
-        airspaceLayer
       ];
 
       if (typeof deckOverlay !== 'undefined') {
@@ -1770,7 +1978,7 @@
 
       if (lastSegment && lastSegment.length > 0) {
         const lastPt = lastSegment[lastSegment.length - 1];
-        const altFt = Math.round(lastPt.rawAlt / 0.3048); 
+        const altFt = Math.round(lastPt.rawAlt / FT_TO_M); 
         document.getElementById('det-alt').innerText = altFt.toLocaleString() + " ft";
         
         let correctTime = lastPt.time;
