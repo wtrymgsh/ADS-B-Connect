@@ -231,8 +231,8 @@
       </div>
       
       <div class="panel-section">
-        <label>🌐 Control Zone: <span id="airspace-opacity-val">10</span>%</label>
-        <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="10" oninput="updateAirspaceOpacity(this.value)">
+        <label>🌐 Control Zone: <span id="airspace-opacity-val">15</span>%</label>
+        <input type="range" id="airspace-opacity-slider" min="0" max="30" step="5" value="15" oninput="updateAirspaceOpacity(this.value)">
         
         <!-- YBW-CZ / YYC-CZ トグルボタン -->
         <div class="btn-group-2" style="margin-top: 8px; margin-bottom: 6px;">
@@ -298,6 +298,11 @@
       <div class="panel-section" style="padding-bottom: 0; border-bottom: none;">
         <button id="save-snapshot-btn" class="btn save-btn" onclick="saveCurrentTimespan()">Save This Time Span</button>
       </div>
+
+      <div class="panel-section" id="cone-size-section" style="display: none;">
+        <label>✈️ Aircraft Size: <span id="cone-size-val">12</span>px</label>
+        <input type="range" id="cone-size-slider" min="8" max="36" step="4" value="12" oninput="updateConeSize(this.value)">
+      </div>
     </div>
   </div>
 
@@ -331,7 +336,8 @@
     let YYC_ALTITUDE = 3557; //or 3606
     let YBW_ALTITUDE = 3940
     let EXAGGERATION_FACTOR = 4.0;
-    let AIRSPACE_OPACITY = 0.10; 
+    let CONE_TARGET_PIXEL_LENGTH = 12; // 機体マーカーの画面上での目標の長さ(px)。スライダーで調整
+    let AIRSPACE_OPACITY = 0.15; 
   
     let airspaceVisibility = {
         "CYBW_CZ": true,
@@ -475,6 +481,7 @@
     const deckOverlay = new deck.MapboxOverlay({ 
       interleaved: true,
       layers: [],
+      effects: [], // デフォルトのライティング効果(陰影)を無効化。面の向きに関わらず指定した色をそのまま表示するため
       onClick: (info) => { if (!info.object) { closeDetailPanel(); } }
     });
 
@@ -619,6 +626,27 @@
       ];
     }
 
+    // 機体本体(markerLayer)だけに使う、高度色を明るくしたバージョン。
+    // 軌跡(pathLayer)の色はgetColorByAltitudeのまま変えず、機体だけをDarkスタイルの背景から
+    // 浮き上がって見えるようにするため、各色成分を白に近づける(ブレンドする)形で明るくしている。
+    const AIRCRAFT_COLOR_BRIGHTEN_RATIO = 0.45; // 0=元の色のまま、1=完全に白
+    function getBrightColorByAltitude(rawAlt) {
+      const [r, g, b, a] = getColorByAltitude(rawAlt);
+      const brighten = (c) => Math.round(c + (255 - c) * AIRCRAFT_COLOR_BRIGHTEN_RATIO);
+      return [brighten(r), brighten(g), brighten(b), a];
+    }
+
+    // Dark(cyber)・Satelliteスタイルは背景が暗い/ごちゃついているため、
+    // 高度による色分けよりも視認性を優先し、機体を単色(黄色)にする。
+    // Light(backdrop)スタイルは背景が明るいので、これまで通り高度色を使う。
+    const AIRCRAFT_SOLID_COLOR = [255, 221, 0, 255]; // 黄色
+    function getAircraftColor(rawAlt) {
+      if (currentStyleName === 'cyber' || currentStyleName === 'satellite') {
+        return AIRCRAFT_SOLID_COLOR;
+      }
+      return getBrightColorByAltitude(rawAlt);
+    }
+
     // 現在のマップカメラを基準に、各機体の「カメラからの距離」に応じたサイズ補正倍率を計算する。
     // deck.glのpixels単位だけではpitch(視点の傾き)による遠近スケールが完全には打ち消されないため、
     // 画面中心(基準距離)に対する相対距離の逆数を掛けて、近い/遠いマーカーの見た目サイズを揃える。
@@ -667,6 +695,227 @@
       return (pt.rawAlt !== undefined && !isNaN(pt.rawAlt)) ? Number(pt.rawAlt) : 0;
     }
 
+    // 直近の位置履歴(points)から、3次元の進行方向（水平方向のヨーと、昇降によるピッチ）を計算する。
+    // points が短い/移動距離が小さい（停止中・ノイズレベル）場合は、
+    // ADS-Bのtrack(コンパス角度)にフォールバックし、ピッチは0(水平)とする。
+    function computeAircraftOrientation(points, fallbackYawDeg, exag) {
+      const HISTORY_POINTS = 5; // 直近何点から向きを計算するか
+      if (!points || points.length < 2) {
+        return { yaw: fallbackYawDeg, pitch: 0 };
+      }
+
+      const recent = points.slice(-HISTORY_POINTS);
+      const p1 = recent[0];
+      const p2 = recent[recent.length - 1];
+
+      const lon1 = Number(p1.pos[0]), lat1 = Number(p1.pos[1]);
+      const lon2 = Number(p2.pos[0]), lat2 = Number(p2.pos[1]);
+      if (isNaN(lon1) || isNaN(lat1) || isNaN(lon2) || isNaN(lat2)) {
+        return { yaw: fallbackYawDeg, pitch: 0 };
+      }
+
+      const avgLatRad = ((lat1 + lat2) / 2) * Math.PI / 180;
+      const dx = (lon2 - lon1) * 111320 * Math.cos(avgLatRad); // 東西方向の移動量(m)
+      const dy = (lat2 - lat1) * 110540;                        // 南北方向の移動量(m)
+      const horizDist = Math.hypot(dx, dy);
+
+      // 移動距離が小さすぎる（地上で停止中・GPSノイズレベル）場合はコンパス角度にフォールバック
+      if (horizDist < 5) {
+        return { yaw: fallbackYawDeg, pitch: 0 };
+      }
+
+      // 高度差は「描画上の」値（EXAGGERATION_FACTORを反映）で計算する。
+      // これにより、円錐の向きが実際に描画される経路の傾きと視覚的に一致する。
+      const dz = (safeAlt(p2) - safeAlt(p1)) * exag;
+
+      const yaw = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+      let pitch = Math.atan2(dz, horizDist) * 180 / Math.PI;
+      pitch = Math.max(-85, Math.min(85, pitch)); // 極端な値での見た目の破綻を防ぐ
+
+      return { yaw, pitch };
+    }
+
+    // ==========================================
+    // 機体マーカー用の飛行機メッシュ（胴体+主翼+垂直尾翼、進行方向を向く3D立体）
+    // ==========================================
+    // 機首(現在位置)を原点(0,0,0)、そこから -X 方向に胴体が伸びる。
+    // SimpleMeshLayerのgetOrientationは [pitch, yaw, roll]（度）で、
+    // yawは+Z軸（真上）まわりの回転。このメッシュは「+X = 機首方向」で作ってあるので、
+    // getOrientationのyawに角度を渡すとその方向へ機首が向く。
+    //
+    // 重要: 機体の中心軸(機首-尾部を結ぶ軸)は、pitch(ピッチ)の回転軸と
+    // 一致させてはいけない（軸が一致していると、軸まわりに回転させても
+    // 見た目が変わらない形の場合はピッチの値を変えても視覚的な変化が出ない）。
+    // 胴体をX軸に通しつつ、主翼・尾翼で非対称な形にしているため、この問題は起きない。
+    function createAircraftMesh(lengthMeters) {
+      const positions = [];
+      const normals = [];
+
+      const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      const cross = (a, b) => [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0]
+      ];
+      const normalize = (v) => {
+        const len = Math.hypot(v[0], v[1], v[2]) || 1;
+        return [v[0] / len, v[1] / len, v[2] / len];
+      };
+      // 1枚の三角形を追加。
+      // 法線(面の向き)は本来3頂点から計算するが、material:false / effects:[] でも
+      // 陰影(面ごとの明暗差)が消えなかったため、全ての面の法線を強制的に同じ向き([0,0,1]、真上)に
+      // 統一することで、面の向きに関わらず均一な色になるようにしている。
+      const UNIFORM_NORMAL = [0, 0, 1];
+      const pushTri = (p0, p1, p2) => {
+        positions.push(...p0, ...p1, ...p2);
+        normals.push(...UNIFORM_NORMAL, ...UNIFORM_NORMAL, ...UNIFORM_NORMAL);
+      };
+      // 主翼・尾翼のような「厚みのない板」を、表からも裏からも見えるように両面分追加する
+      const pushTriBothSides = (p0, p1, p2) => {
+        pushTri(p0, p1, p2);
+        pushTri(p0, p2, p1);
+      };
+
+      // ------ 寸法（実機の縮尺ではなく、レーダー表示として見やすいようデフォルメ） ------
+      const L = lengthMeters;
+      const nose = [0, 0, 0];
+      const tail = [-L, 0, 0];
+
+      // 胴体: 先端(nose)・後端(tail)は尖った四角錐、その間に断面が一定の四角柱(ボックス)を挟んだ形状。
+      // 前後2つの断面(bodyFrontX側・bodyBackX側)を作り、間を4枚の側面パネルでつないで箱にし、
+      // その前後をnose/tailへの三角形でつなげている。
+      const bodyFrontX = -L * 0.15; // 箱の前端(nose寄り)の位置
+      const bodyBackX  = -L * 0.75; // 箱の後端(tail寄り)の位置
+      const bodyHalfWidth = L * 0.06;
+      const bodyHalfHeight = L * 0.06;
+
+      const bTopF    = [bodyFrontX, 0, bodyHalfHeight];
+      const bBottomF = [bodyFrontX, 0, -bodyHalfHeight];
+      const bLeftF   = [bodyFrontX, -bodyHalfWidth, 0];
+      const bRightF  = [bodyFrontX, bodyHalfWidth, 0];
+
+      const bTopB    = [bodyBackX, 0, bodyHalfHeight];
+      const bBottomB = [bodyBackX, 0, -bodyHalfHeight];
+      const bLeftB   = [bodyBackX, -bodyHalfWidth, 0];
+      const bRightB  = [bodyBackX, bodyHalfWidth, 0];
+
+      // 胴体前部(nose → 前側断面)。法線の向き(巻き順)に関わらずどこからでも見えるよう両面描画
+      pushTriBothSides(nose, bRightF, bTopF);
+      pushTriBothSides(nose, bTopF, bLeftF);
+      pushTriBothSides(nose, bLeftF, bBottomF);
+      pushTriBothSides(nose, bBottomF, bRightF);
+
+      // 胴体中央部(前側断面 → 後側断面、四角柱の側面4枚)。こちらも両面描画
+      const pushBodyQuad = (a, b, c, d) => { // a,b,c,d を反時計回り(nose側から見て)で渡す
+        pushTriBothSides(a, b, c);
+        pushTriBothSides(a, c, d);
+      };
+      pushBodyQuad(bRightF, bTopF, bTopB, bRightB);       // 右上パネル
+      pushBodyQuad(bTopF, bLeftF, bLeftB, bTopB);         // 左上パネル
+      pushBodyQuad(bLeftF, bBottomF, bBottomB, bLeftB);   // 左下パネル
+      pushBodyQuad(bBottomF, bRightF, bRightB, bBottomB); // 右下パネル
+
+      // 胴体後部(後側断面 → tail)。こちらも両面描画
+      pushTriBothSides(tail, bTopB, bRightB);
+      pushTriBothSides(tail, bLeftB, bTopB);
+      pushTriBothSides(tail, bBottomB, bLeftB);
+      pushTriBothSides(tail, bRightB, bBottomB);
+
+      // 主翼・水平尾翼共通: 翼根(機体側)から翼端にかけて後方にせり出す「後退翼」の台形を作る。
+      // 旅客機のように、前縁(リーディングエッジ)がなだらかに後退し、翼端に向かって
+      // コード幅(前後の厚み)も狭くなる形にしている。上下どちらから見ても見えるよう両面描画。
+      const pushSweptWingPair = (rootX, rootY, halfSpan, sweep, rootChordFront, rootChordBack, tipChordFront, tipChordBack, z) => {
+        const side = (sign) => {
+          const rootLE = [rootX + rootChordFront, sign * rootY, z];
+          const rootTE = [rootX - rootChordBack, sign * rootY, z];
+          const tipLE  = [rootX + tipChordFront - sweep, sign * halfSpan, z];
+          const tipTE  = [rootX - tipChordBack - sweep, sign * halfSpan, z];
+
+          if (sign > 0) {
+            pushTriBothSides(rootLE, tipLE, tipTE);
+            pushTriBothSides(rootLE, tipTE, rootTE);
+          } else {
+            // 反対側は頂点の並び順(巻き順)を逆にして法線の向きを揃える
+            pushTriBothSides(rootLE, tipTE, tipLE);
+            pushTriBothSides(rootLE, rootTE, tipTE);
+          }
+        };
+        side(1);  // 右側
+        side(-1); // 左側
+      };
+
+      // 主翼
+      const wingRootX = -L * 0.48;      // 翼根の基準X位置
+      const wingRootY = L * 0.045;      // 翼根のY位置(胴体からの隙間)
+      const wingHalfSpan = L * 0.42;    // 翼端までのY距離(半スパン)
+      const wingSweep = L * 0.24;       // 後退角の大きさ(翼端が翼根よりどれだけ後方にずれるか)
+      const wingRootChordFront = L * 0.09; // 翼根の前縁オフセット
+      const wingRootChordBack  = L * 0.15; // 翼根の後縁オフセット
+      const wingTipChordFront  = L * 0.02; // 翼端の前縁オフセット(翼根より小さい=先細り)
+      const wingTipChordBack   = L * 0.06; // 翼端の後縁オフセット
+
+      pushSweptWingPair(
+        wingRootX, wingRootY, wingHalfSpan, wingSweep,
+        wingRootChordFront, wingRootChordBack, wingTipChordFront, wingTipChordBack, 0
+      );
+
+      // 水平尾翼: 主翼よりひとまわり小さく、機体後部(垂直尾翼の付け根あたり)につく
+      const htailRootX = -L * 0.95; //水平尾翼が胴体につく位置(X)
+      const htailRootY = L * 0.00; //翼根と胴体中心のすき間
+      const htailHalfSpan = L * 0.14; //	翼端までの半スパン(=尾翼の横幅)
+      const htailSweep = L * 0.00; //後退角の強さ
+      const htailRootChordFront = L * 0.1; //翼根の前縁の張り出し量
+      const htailRootChordBack  = L * 0.0; //翼根の後縁の張り出し量
+      const htailTipChordFront  = L * 0.00; //翼端の前縁の張り出し量
+      const htailTipChordBack   = L * 0.05; //翼端の後縁の張り出し量
+
+      pushSweptWingPair(
+        htailRootX, htailRootY, htailHalfSpan, htailSweep,
+        htailRootChordFront, htailRootChordBack, htailTipChordFront, htailTipChordBack, 0
+      );
+
+      // 垂直尾翼: 機体後部から立ち上がる四辺形(台形)。旅客機のように、
+      // 底辺(付け根)は前後に長く、上に行くほど後退・先細りする形にしている。両面描画。
+      const finBaseFront = [-L * 0.83, 0, 0];          // 底辺・前縁(付け根側)
+      const finBaseBack  = [-L * 0.96, 0, 0];          // 底辺・後縁
+      const finTopBack   = [-L * 1.00, 0, L * 0.18];   // 上辺・後縁(後縁はほぼ垂直)
+      const finTopFront  = [-L * 0.95, 0, L * 0.18];   // 上辺・前縁(底辺の前縁より後退している)
+
+      pushTriBothSides(finBaseFront, finBaseBack, finTopBack);
+      pushTriBothSides(finBaseFront, finTopBack, finTopFront);
+
+      // 原点(getPositionで渡す座標)を「機首」ではなく「機体の全長の中央」に合わせるため、
+      // 全頂点のX座標を+L/2だけずらす（元は機首が0、尾部が-Lだったので、中央は-L/2 → 0になる）
+      const CENTER_OFFSET_X = L / 2;
+      for (let i = 0; i < positions.length; i += 3) {
+        positions[i] += CENTER_OFFSET_X;
+      }
+
+      // indicesを使わず、3頂点ずつが1つの三角形になる「三角形の羅列」形式にする
+      // （indices付きのメッシュを渡すと初期化エラーになったため）
+      // さらに、各属性は glTF方式のアクセサ形式 { value: TypedArray, size: 要素数 } で渡す必要がある。
+      // 生のFloat32Arrayをそのまま渡すと "t.value.length" のようなエラーで初期化に失敗する。
+      const vertexCount = positions.length / 3;
+      const texCoords = new Float32Array(vertexCount * 2); // テクスチャは使わないのでダミー値(0埋め)でよい
+
+      return {
+        positions: { value: new Float32Array(positions), size: 3 },
+        normals: { value: new Float32Array(normals), size: 3 },
+        texCoords: { value: texCoords, size: 2 }
+      };
+    }
+
+    // 機首から尾部までの全長(メートル)。SimpleMeshLayerは実寸(メートル)で描画されるため、
+    // ズームレベルに応じて見た目の大きさが変わる（＝実物の3D機体に近い自然な挙動）。
+    // 小さすぎて見えない/大きすぎる場合はこの値を調整する。
+    const AIRCRAFT_LENGTH_M = 1200; // 全長1200m
+    const AIRCRAFT_MESH = createAircraftMesh(AIRCRAFT_LENGTH_M);
+
+    // 進行方向(コンパス角度: 北=0°、時計回り)とメッシュのyaw回転方向を合わせるためのオフセット。
+    // メッシュの先端は+X(東)方向がデフォルトの向きなので、北(+Y)を基準にするため90度補正している。
+    // それでも向きが実際の進行方向とズレて見える場合は、90ずつ足し引きして調整する。
+    const CONE_HEADING_OFFSET_DEG = 90;
+
     // アプローチパスを生成
     function generateApproachLine(rwy, exag) {
       const startLon = rwy.center[0];
@@ -679,7 +928,7 @@
         : YYC_ALTITUDE;
       const airportElevationMeters = (airportElevationFt * FT_TO_M) + pathHeightAdjustment;
       const reverseHeadingRad = ((rwy.heading + 180) % 360) * Math.PI / 180;
-      const distanceMeters = 7*NM_TO_M; 
+      const distanceMeters = 10*NM_TO_M; 
       const glideSlopeClimbMeters = distanceMeters * Math.sin(3 * Math.PI / 180); //角度３度
       const finalAltitudeMeters = airportElevationMeters + glideSlopeClimbMeters;
 
@@ -695,16 +944,68 @@
       ];
     }
 
-    // アプローチラインを高さ方向(Z)にずらしたバージョンを生成する。
-    // 同じラインを複数枚、少しずつ高さをずらして重ねて描画することで、
-    // 真横から見た時にも「厚みのある帯」として視認できるようにする。
-    function generateApproachLineAtZOffset(rwy, exag, zOffsetMeters) {
-      const [start, end] = generateApproachLine(rwy, exag);
-      const dz = zOffsetMeters * exag; // 他の高度表現と同じくEXAGGERATION_FACTORに合わせて拡大縮小する
-      return [
-        [start[0], start[1], start[2] + dz],
-        [end[0], end[1], end[2] + dz]
+    // アプローチラインを「地面に置いた板を持ち上げただけ」に見えないよう、
+    // 実際に厚み(width×thickness)を持つ直方体(ボックス)のメッシュとして生成する。
+    // start(開始点)を原点(0,0,0)としたローカル座標(メートル)で8頂点のボックスを作り、
+    // 呼び出し側でgetPositionにstart(実際の緯度経度・高度)を渡して配置する。
+    function createApproachBoxMesh(start, end, widthMeters, thicknessMeters) {
+      const avgLatRad = ((start[1] + end[1]) / 2) * Math.PI / 180;
+      const dx = (end[0] - start[0]) * 111320 * Math.cos(avgLatRad); // 東西方向の距離(m)
+      const dy = (end[1] - start[1]) * 110540;                        // 南北方向の距離(m)
+      const dz = end[2] - start[2];                                   // 高度差(m、既にEXAGGERATION_FACTOR反映済み)
+
+      const horizLen = Math.hypot(dx, dy) || 1;
+      const dirX = dx / horizLen, dirY = dy / horizLen;
+      const perpX = -dirY, perpY = dirX; // 進行方向に垂直な水平ベクトル(幅方向)
+
+      const halfW = widthMeters / 2;
+
+      // 底面をstart/endの高度(=YYC_ALTITUDE基準のライン)そのものに固定し、
+      // そこから上方向にのみ厚み(thicknessMeters)を持たせる（中心基準ではない）
+      const sBL = [-perpX * halfW, -perpY * halfW, 0];
+      const sBR = [ perpX * halfW,  perpY * halfW, 0];
+      const sTL = [-perpX * halfW, -perpY * halfW, thicknessMeters];
+      const sTR = [ perpX * halfW,  perpY * halfW, thicknessMeters];
+      const eBL = [dx - perpX * halfW, dy - perpY * halfW, dz];
+      const eBR = [dx + perpX * halfW, dy + perpY * halfW, dz];
+      const eTL = [dx - perpX * halfW, dy - perpY * halfW, dz + thicknessMeters];
+      const eTR = [dx + perpX * halfW, dy + perpY * halfW, dz + thicknessMeters];
+
+      const positions = [];
+      const normals = [];
+      const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+      const cross = (a, b) => [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0]
       ];
+      const normalize = (v) => {
+        const len = Math.hypot(v[0], v[1], v[2]) || 1;
+        return [v[0] / len, v[1] / len, v[2] / len];
+      };
+      const pushTri = (p0, p1, p2) => {
+        const n = normalize(cross(sub(p1, p0), sub(p2, p0)));
+        positions.push(...p0, ...p1, ...p2);
+        normals.push(...n, ...n, ...n);
+      };
+      const pushQuad = (a, b, c, d) => { // 反時計回りで4点を渡す
+        pushTri(a, b, c);
+        pushTri(a, c, d);
+      };
+
+      pushQuad(sTL, sTR, eTR, eTL); // 上面
+      pushQuad(sBR, sBL, eBL, eBR); // 底面
+      pushQuad(sBL, sTL, eTL, eBL); // 左側面
+      pushQuad(sTR, sBR, eBR, eTR); // 右側面
+
+      const vertexCount = positions.length / 3;
+      const texCoords = new Float32Array(vertexCount * 2); // テクスチャは使わないのでダミー値(0埋め)
+
+      return {
+        positions: { value: new Float32Array(positions), size: 3 },
+        normals: { value: new Float32Array(normals), size: 3 },
+        texCoords: { value: texCoords, size: 2 }
+      };
     }
 
     function toggleRunway(id) {
@@ -718,17 +1019,16 @@
 
 
     // 管制圏の生成
-    const ALT_GAP = 1
     const YYC_CONTROL_ZONE = [
         { 
             id: "yyc-cz", group: "CZ-YYC", name: "CYYC Control Zone", type: "CYYC_CZ", 
             radius: 7 * NM_TO_M, startAngle: 0, endAngle: 360, 
-            rawElevation: YYC_ALTITUDE*FT_TO_M, rawCeiling: (6600-ALT_GAP)*FT_TO_M, color: [100, 118, 100] // 1084m〜2011m (6600ft ASL)
+            rawElevation: YYC_ALTITUDE*FT_TO_M, rawCeiling: 6600*FT_TO_M, color: [100, 118, 100] // 1084m〜2011m (6600ft ASL)
         },
         { 
             id: "ybw-cz", group: "CZ-YBW", name: "CYBW Springbank Control Zone", type: "CYBW_CZ", 
             radius: 5 * NM_TO_M, startAngle: 0, endAngle: 360, 
-            rawElevation: YBW_ALTITUDE*FT_TO_M, rawCeiling: (5500-ALT_GAP)*FT_TO_M, color: [0, 200, 100] 
+            rawElevation: YBW_ALTITUDE*FT_TO_M, rawCeiling: 5500*FT_TO_M, color: [0, 200, 100] 
         }
     ];
 
@@ -1189,6 +1489,7 @@
       
       document.getElementById('archive-select-section').style.display = (mode === 'archive') ? 'block' : 'none';
       document.getElementById('save-snapshot-btn').style.display = (mode === 'realtime') ? 'block' : 'none';
+      document.getElementById('cone-size-section').style.display = (mode === 'live') ? 'block' : 'none';
 
       const timelinePanel = document.getElementById('bottom-timeline-panel');
       if (mode === 'live') {
@@ -1422,11 +1723,13 @@
         const aircraft = flightPaths[id];
 
         let lastPt = null;
+        let lastSeg = null;
         if (aircraft.segments.length > 0) {
           for (let i = aircraft.segments.length - 1; i >= 0; i--) {
             const seg = aircraft.segments[i];
             if (seg && seg.length > 0) {
               lastPt = seg[seg.length - 1];
+              lastSeg = seg;
               break;
             }
           }
@@ -1443,11 +1746,14 @@
           
           if (!isNaN(lon) && !isNaN(lat)) {
             const headingAngle = aircraft.track ? parseFloat(aircraft.track) : 0;
+            const fallbackYaw = isNaN(headingAngle) ? 0 : headingAngle;
+            const orientation = computeAircraftOrientation(lastSeg, fallbackYaw, EXAGGERATION_FACTOR);
             currentPositionsArray.push({
               id: id,
               pos: [lon, lat, rawAlt * EXAGGERATION_FACTOR], 
               rawAlt: rawAlt, 
-              angle: isNaN(headingAngle) ? 0 : headingAngle   
+              angle: orientation.yaw,
+              pitch: orientation.pitch
             });
           }
 
@@ -1466,6 +1772,7 @@
         else {
           let hasValidPositionForMarker = false;
           let bestMarkerPt = null;
+          let bestMarkerDisplayPoints = null;
 
           aircraft.segments.forEach(segment => {
             const displayPoints = segment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
@@ -1479,6 +1786,7 @@
               
               if (!hasValidPositionForMarker) {
                 bestMarkerPt = displayPoints[displayPoints.length - 1];
+                bestMarkerDisplayPoints = displayPoints;
                 hasValidPositionForMarker = true;
               }
             }
@@ -1490,11 +1798,14 @@
             const rawAlt = (bestMarkerPt.rawAlt !== undefined && !isNaN(bestMarkerPt.rawAlt)) ? Number(bestMarkerPt.rawAlt) : 0;
             if (!isNaN(lon) && !isNaN(lat)) {
               const headingAngle = aircraft.track ? parseFloat(aircraft.track) : 0;
+              const fallbackYaw = isNaN(headingAngle) ? 0 : headingAngle;
+              const orientation = computeAircraftOrientation(bestMarkerDisplayPoints, fallbackYaw, EXAGGERATION_FACTOR);
               currentPositionsArray.push({
                 id: id,
                 pos: [lon, lat, rawAlt * EXAGGERATION_FACTOR],
                 rawAlt: rawAlt,
-                angle: isNaN(headingAngle) ? 0 : headingAngle
+                angle: orientation.yaw,
+                pitch: orientation.pitch
               });
             }
           }
@@ -1756,29 +2067,36 @@
         viewMode === 'live' ? currentPositionsArray : []
       );
 
-      const markerLayer = new deck.ScatterplotLayer({
+      // 円錐(SimpleMeshLayer)は実寸(メートル)描画のため、ズームレベルに応じて
+      // 「画面上で狙った長さ(ピクセル)」になるよう毎回スケールを逆算する。
+      // CONE_TARGET_PIXEL_LENGTH はスライダーで調整可能なグローバル変数。
+      // 156543.03392 は Web Mercator の標準定数（赤道上・ズーム0でのメートル/ピクセル）。
+      const coneMetersPerPixel = map
+        ? 156543.03392 * Math.cos(map.getCenter().lat * Math.PI / 180) / Math.pow(2, map.getZoom())
+        : 1;
+      const coneZoomScale = (CONE_TARGET_PIXEL_LENGTH * coneMetersPerPixel) / AIRCRAFT_LENGTH_M;
+
+
+
+      const markerLayer = new deck.SimpleMeshLayer({
         id: 'aircraft-3d-marker-layer',
 
         data: (viewMode === 'live') ? currentPositionsArray : [],
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
-        getPosition: d => d.pos, 
-        radiusUnits: 'pixels',
-        getRadius: d => {
-          const base = d.id === selectedAircraftId ? (currentLineWidth * 8) : (currentLineWidth * 4);
-          return base * (aircraftScaleFactors[d.id] || 1);
-        }, 
-        billboard: true, 
-        stroked: true,
-        filled: true,
-        getFillColor: d => getColorByAltitude(d.rawAlt),
-        getLineColor: [255, 255, 255, 255], 
-        getLineWidth: d => {
-          const base = d.id === selectedAircraftId ? 4 : 2;
-          return base * (aircraftScaleFactors[d.id] || 1);
-        }, 
-        lineWidthUnits: 'pixels',
+        mesh: AIRCRAFT_MESH,
+        getPosition: d => d.pos,
+        // 進行方向(水平のヨー + 昇降のピッチ)に合わせて機首を向ける。ズレる場合はCONE_HEADING_OFFSET_DEGを調整。
+        getOrientation: d => [-(d.pitch || 0), -(d.angle || 0) + CONE_HEADING_OFFSET_DEG, 0],
+        getColor: d => getAircraftColor(d.rawAlt),
+        material: false, // 陰影(ライティング)を無効化し、指定した色をそのまま平坦に表示する
+        // ズームによる画面上サイズの補正 × カメラ距離による補正 × 選択中の強調(1.6倍)
+        getScale: d => {
+          const s = coneZoomScale * (aircraftScaleFactors[d.id] || 1) * (d.id === selectedAircraftId ? 1.6 : 1);
+          return [s, s, s];
+        },
+        sizeScale: 1,
         pickable: true,
-        parameters: { depthTest: false, depthMask: false, blend: true },
+        parameters: { depthTest: false, depthMask: false, blend: false },
         onClick: info => {
           if (info.object) {
             selectedAircraftId = info.object.id; 
@@ -1788,8 +2106,8 @@
         updateTriggers: {
           data: [viewMode, currentPositionsArray],
           getPosition: [currentPositionsArray], 
-          getRadius: [selectedAircraftId, currentLineWidth, aircraftScaleFactors], 
-          getLineWidth: [selectedAircraftId, aircraftScaleFactors]
+          getOrientation: [currentPositionsArray],
+          getScale: [selectedAircraftId, aircraftScaleFactors, coneZoomScale]
         }
       });
 
@@ -1814,7 +2132,7 @@
         billboard: true,
         getPixelOffset: d => {
           const s = aircraftScaleFactors[d.id] || 1;
-          return [-20 * s, -18 * s];
+          return [-20 * s, -22 * s];
         },
 
         background: true,
@@ -1868,57 +2186,33 @@
       });
 
       const activeRunwaysData = YYC_RUNWAYS.filter(rwy => rwy.active);
-      
-      const runwayLayer = new deck.PathLayer({
-        id: 'yyc-runway-approach-layer',
-        data: activeRunwaysData,
-        getPath: d => generateApproachLine(d, EXAGGERATION_FACTOR), 
-        getColor: d => [...d.color, 154], 
-        widthUnits: 'meters',
-        getWidth: 200,
-        jointRounded: true,
-        capRounded: true,
-        pickable: false,
-        parameters: { depthTest: false, depthMask: false },
-        updateTriggers: {
-          getPath: [EXAGGERATION_FACTOR]
-        }
-      });
 
-      // アプローチラインの厚み表現: 元のrunwayLayer(高さ0)はそのまま残し、
-      // そこから上方向にのみ同じリボンを少しずつずらして重ねることで厚みを持たせる。
-      // （PolygonLayerでの平面ポリゴン方式は、始点・終点しかXY座標のバリエーションがなく
-      // 面積0として扱われ描画できなかったため、この「積み重ね」方式に変更した）
-      const APPROACH_THICKNESS_METERS = 20; // 元のラインから上方向にどれだけ厚みを持たせるか
-      const APPROACH_THICKNESS_LAYER_COUNT = 5; // 重ねる枚数（多いほど滑らかだが負荷は上がる）
+      // アプローチラインを幅×厚みのある直方体(上下+両側面の4枚)として描画する。
+      // 滑走路ごとに形(始点・終点・向き)が異なるため、SimpleMeshLayerを滑走路ごとに1枚ずつ生成する
+      // （SimpleMeshLayerは1つのレイヤーにつきメッシュ形状が共通のため、機体数分ではなく滑走路数分だけ作る）
+      const APPROACH_WIDTH_METERS = 600 * FT_TO_M;     // 幅
+      const APPROACH_THICKNESS_METERS = 200 * FT_TO_M;  // 厚み
 
-      const runwayThicknessLayers = [];
-      for (let i = 0; i < APPROACH_THICKNESS_LAYER_COUNT; i++) {
-        // 0(元のラインのすぐ上)〜 APPROACH_THICKNESS_METERS(最上部) の範囲に均等配置
-        const zOffsetMeters = ((i + 1) / APPROACH_THICKNESS_LAYER_COUNT) * APPROACH_THICKNESS_METERS;
-        runwayThicknessLayers.push(new deck.PathLayer({
-          id: `yyc-runway-approach-thickness-layer-${i}`,
-          data: activeRunwaysData,
-          getPath: d => generateApproachLineAtZOffset(d, EXAGGERATION_FACTOR, zOffsetMeters),
-          getColor: d => [...d.color, 154],
-          widthUnits: 'meters',
-          getWidth: 200,
-          jointRounded: true,
-          capRounded: true,
+      const runwayBoxLayers = activeRunwaysData.map(rwy => {
+        const [start, end] = generateApproachLine(rwy, EXAGGERATION_FACTOR);
+        const boxMesh = createApproachBoxMesh(start, end, APPROACH_WIDTH_METERS, APPROACH_THICKNESS_METERS * EXAGGERATION_FACTOR);
+        return new deck.SimpleMeshLayer({
+          id: `yyc-runway-approach-box-${rwy.id}`,
+          data: [{}],
+          coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
+          mesh: boxMesh,
+          getPosition: () => start,
+          getColor: [...rwy.color, 64],
           pickable: false,
-          parameters: { depthTest: false, depthMask: false },
-          updateTriggers: {
-            getPath: [EXAGGERATION_FACTOR]
-          }
-        }));
-      }
+          parameters: { depthTest: false, depthMask: false, blend: true }
+        });
+      });
 
       const currentLayers = [
         pathLayer, 
         markerLayer, 
         callsignTextLayer,
-        runwayLayer, 
-        runwayThicknessLayers,
+        runwayBoxLayers,
         airspaceLayer,
         tcaHorizontalLayer, 
         tcaVerticalLayer, 
@@ -1948,6 +2242,11 @@
       if (map && map.getSource('aws-terrain')) {
         map.setTerrain({ source: 'aws-terrain', exaggeration: EXAGGERATION_FACTOR });
       }
+    }
+
+    function updateConeSize(val) {
+      CONE_TARGET_PIXEL_LENGTH = parseInt(val);
+      document.getElementById('cone-size-val').innerText = val;
     }
 
     function updateAirspaceOpacity(val) {
