@@ -249,7 +249,7 @@
       </div>
       
       <div class="panel-section">
-        <label>🛬 Approch Path</label>
+        <label>🛬 Approach Path</label>
         <div class="btn-group">
           <button id="btn-rwy-17R" class="btn rwy-btn" onclick="toggleRunway('17R')">17R</button>
           <button id="btn-rwy-17L" class="btn rwy-btn" onclick="toggleRunway('17L')">17L</button>
@@ -446,8 +446,8 @@
     });
 
     let panelTimeout = null;
-    const AUTO_COLLAPSE_DELAY = 5000;
-    const HOVER_COLLAPSE_DELAY = 3000;
+    const AUTO_COLLAPSE_DELAY = 2000;
+    const HOVER_COLLAPSE_DELAY = 1000;
 
     function resetPanelTimer(delay = AUTO_COLLAPSE_DELAY) {
       clearTimeout(panelTimeout);
@@ -615,8 +615,8 @@
     }
 
     function getColorByAltitude(rawAlt) {
-      let currentMinAlt = 0; 
-      let currentMaxAlt = 9000; 
+      let currentMinAlt = YYC_ALTITUDE * FT_TO_M * 0.0; 
+      let currentMaxAlt = 40000 * FT_TO_M; 
       const ratio = Math.min(Math.max((rawAlt - currentMinAlt) / (currentMaxAlt - currentMinAlt), 0), 1);
       return [
         Math.round(255 * (1 - ratio)),
@@ -920,15 +920,15 @@
     function generateApproachLine(rwy, exag) {
       const startLon = rwy.center[0];
       const startLat = rwy.center[1];
-      const pathHeightAdjustment = 1;
+      const pathHeightAdjustment = -10; // 単位:ft
       // rwy.airport が未指定の滑走路データが来た場合はCYYCにフォールバック
       const airportKey = rwy.airport || 'CYYC';
       const airportElevationFt = AIRPORT_ELEVATION_FT[airportKey] !== undefined
         ? AIRPORT_ELEVATION_FT[airportKey]
         : YYC_ALTITUDE;
-      const airportElevationMeters = (airportElevationFt * FT_TO_M) + pathHeightAdjustment;
+      const airportElevationMeters = (airportElevationFt + pathHeightAdjustment) * FT_TO_M ;
       const reverseHeadingRad = ((rwy.heading + 180) % 360) * Math.PI / 180;
-      const distanceMeters = 10*NM_TO_M; 
+      const distanceMeters = 10 * NM_TO_M; 
       const glideSlopeClimbMeters = distanceMeters * Math.sin(3 * Math.PI / 180); //角度３度
       const finalAltitudeMeters = airportElevationMeters + glideSlopeClimbMeters;
 
@@ -2191,7 +2191,7 @@
       // 滑走路ごとに形(始点・終点・向き)が異なるため、SimpleMeshLayerを滑走路ごとに1枚ずつ生成する
       // （SimpleMeshLayerは1つのレイヤーにつきメッシュ形状が共通のため、機体数分ではなく滑走路数分だけ作る）
       const APPROACH_WIDTH_METERS = 600 * FT_TO_M;     // 幅
-      const APPROACH_THICKNESS_METERS = 200 * FT_TO_M;  // 厚み
+      const APPROACH_THICKNESS_METERS = 150 * FT_TO_M;  // 厚み
 
       const runwayBoxLayers = activeRunwaysData.map(rwy => {
         const [start, end] = generateApproachLine(rwy, EXAGGERATION_FACTOR);
