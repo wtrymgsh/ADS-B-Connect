@@ -218,7 +218,7 @@
   <button id="topview-btn" class="control-btn" onclick="setViewToTop()">真上から</button>
   <button id="yyc-btn" class="control-btn" onclick="toggleYycLock()">YYC</button>
 
-  <div id="control-panel">
+  <div id="control-panel" class="collapsed">
     <div class="panel-header" onclick="togglePanel()">
       <span>📡 RADAR CONTROL</span>
       <span id="toggle-btn" class="toggle-icon">▲</span>
@@ -398,6 +398,55 @@
     let archiveFlightPaths = {};  
     let flightPaths = liveFlightPaths; 
 
+    // ==========================================
+    // 設定の保存・復元 (localStorage、キー名: radar_setting)
+    // ブラウザ内(この端末・このブラウザのみ)に保存され、次回開いた時に自動的に復元される。
+    // ==========================================
+    const SETTINGS_STORAGE_KEY = 'radar_setting';
+    let settingsRestoring = false; // 復元中の一時的な変更でsaveRadarSettingsが呼ばれるのを防ぐフラグ
+
+    function saveRadarSettings() {
+      if (settingsRestoring) return;
+      try {
+        const settings = {
+          mapStyle: currentStyleName,
+          exaggeration: EXAGGERATION_FACTOR,
+          lineWidth: currentLineWidth,
+          airspaceOpacity: AIRSPACE_OPACITY,
+          airspaceVisibility: airspaceVisibility,
+          runwayActive: Object.fromEntries(YYC_RUNWAYS.map(r => [r.id, r.active])),
+          aircraftSize: CONE_TARGET_PIXEL_LENGTH,
+          viewMode: viewMode,
+          camera: map ? {
+            center: [map.getCenter().lng, map.getCenter().lat],
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+            bearing: map.getBearing()
+          } : null
+        };
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      } catch (e) {
+        console.log('ℹ️ 設定の保存に失敗しました', e);
+      }
+    }
+
+    function loadRadarSettings() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (e) {
+        console.log('ℹ️ 設定の読み込みに失敗しました', e);
+        return null;
+      }
+    }
+
+    // mapのカメラ位置は移動のたびに毎回保存すると負荷が高いので、
+    // 移動が落ち着いた時(moveend)だけ保存する
+    function setupSettingsAutoSave() {
+      map.on('moveend', saveRadarSettings);
+    }
+
     let selectedAircraftId = null;
 
     function formatToCalgaryTime(timestamp) {
@@ -488,13 +537,36 @@
     document.addEventListener("DOMContentLoaded", async () => {
       setupPanelHoverBehavior();
 
+      // 保存済み設定(前回の状態)を読み込む。無ければ既存のデフォルト値のまま。
+      const savedSettings = loadRadarSettings();
+      settingsRestoring = true;
+
+      if (savedSettings) {
+        if (savedSettings.mapStyle) currentStyleName = savedSettings.mapStyle;
+        if (typeof savedSettings.exaggeration === 'number') EXAGGERATION_FACTOR = savedSettings.exaggeration;
+        if (typeof savedSettings.lineWidth === 'number') currentLineWidth = savedSettings.lineWidth;
+        if (typeof savedSettings.airspaceOpacity === 'number') AIRSPACE_OPACITY = savedSettings.airspaceOpacity;
+        if (savedSettings.airspaceVisibility) {
+          Object.assign(airspaceVisibility, savedSettings.airspaceVisibility);
+        }
+        if (savedSettings.runwayActive) {
+          YYC_RUNWAYS.forEach(r => {
+            if (savedSettings.runwayActive[r.id] !== undefined) r.active = savedSettings.runwayActive[r.id];
+          });
+        }
+        if (typeof savedSettings.aircraftSize === 'number') CONE_TARGET_PIXEL_LENGTH = savedSettings.aircraftSize;
+        if (savedSettings.viewMode) viewMode = savedSettings.viewMode;
+      }
+
+      const initialCamera = (savedSettings && savedSettings.camera) ? savedSettings.camera : null;
+
       map = new maplibregl.Map({
           container: 'map',
           style: STYLES[currentStyleName],
-          center: YYC_CENTER,
-          zoom: 8,
-          bearing: 0,
-          pitch: 0,
+          center: initialCamera ? initialCamera.center : YYC_CENTER,
+          zoom: initialCamera ? initialCamera.zoom : 8,
+          bearing: initialCamera ? initialCamera.bearing : 0,
+          pitch: initialCamera ? initialCamera.pitch : 0,
           maxPitch: 85
       });
 
@@ -506,6 +578,7 @@
       resetPanelTimer();
 
       map.on('load', async () => {
+        setupSettingsAutoSave();
           applyStyleSettings();
           
           try {
@@ -530,10 +603,33 @@
           await loadArchiveList(); 
           map.addControl(deckOverlay);
 
-          // const cameraScript = document.createElement('script');
-          // cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
-          // cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
-          // document.body.appendChild(cameraScript);
+          // 復元した設定値をUI(スライダー・ボタンの見た目)にも反映する
+          document.getElementById('exag-slider').value = EXAGGERATION_FACTOR;
+          document.getElementById('exag-val').innerText = EXAGGERATION_FACTOR;
+          document.getElementById('width-slider').value = currentLineWidth;
+          document.getElementById('width-val').innerText = currentLineWidth;
+          document.getElementById('airspace-opacity-slider').value = Math.round(AIRSPACE_OPACITY * 100);
+          document.getElementById('airspace-opacity-val').innerText = Math.round(AIRSPACE_OPACITY * 100);
+          document.getElementById('cone-size-slider').value = CONE_TARGET_PIXEL_LENGTH;
+          document.getElementById('cone-size-val').innerText = CONE_TARGET_PIXEL_LENGTH;
+          ['cyber', 'backdrop', 'satellite'].forEach(name => {
+            document.getElementById(`style-${name}`).classList.toggle('active', name === currentStyleName);
+          });
+          Object.keys(airspaceVisibility).forEach(key => {
+            const btn = document.getElementById(`btn-airspace-${key}`);
+            if (btn) btn.classList.toggle('active', airspaceVisibility[key]);
+          });
+          YYC_RUNWAYS.forEach(r => {
+            const btn = document.getElementById(`btn-rwy-${r.id}`);
+            if (btn) btn.classList.toggle('active', r.active);
+          });
+
+          settingsRestoring = false;
+
+          const cameraScript = document.createElement('script');
+          cameraScript.src = IS_NATIVE ? './camerawork.js' : '../camerawork.js';
+          cameraScript.onerror = () => { console.warn("⚠️ camerawork.js could not be loaded."); };
+          document.body.appendChild(cameraScript);
 
 
 
@@ -612,6 +708,7 @@
       });
       map.setStyle(STYLES[styleName]);
       map.once('style.load', () => { applyStyleSettings(); });
+      saveRadarSettings();
     }
 
     function getColorByAltitude(rawAlt) {
@@ -1014,6 +1111,7 @@
         rwy.active = !rwy.active;
         document.getElementById(`btn-rwy-${id}`).classList.toggle('active', rwy.active);
         YYC_RUNWAYS = [...YYC_RUNWAYS]; 
+        saveRadarSettings();
       }
     }
 
@@ -1482,6 +1580,7 @@
 
     function switchViewMode(mode) {
       viewMode = mode;
+      saveRadarSettings();
       
       document.getElementById('btn-mode-live').classList.toggle('active', mode === 'live');
       document.getElementById('btn-mode-rt').classList.toggle('active', mode === 'realtime');
@@ -1666,6 +1765,7 @@
         if (typeof deckOverlay !== 'undefined') {
           deckOverlay.setProps({});
         }
+        saveRadarSettings();
       }
     }
 
@@ -2234,6 +2334,7 @@
       currentLineWidth = parseFloat(val);
       document.getElementById('width-val').innerText = val;
       if (typeof deckOverlay !== 'undefined') { deckOverlay.setProps({}); }
+      saveRadarSettings();
     }
 
     function updateExaggeration(val) {
@@ -2242,16 +2343,19 @@
       if (map && map.getSource('aws-terrain')) {
         map.setTerrain({ source: 'aws-terrain', exaggeration: EXAGGERATION_FACTOR });
       }
+      saveRadarSettings();
     }
 
     function updateConeSize(val) {
       CONE_TARGET_PIXEL_LENGTH = parseInt(val);
       document.getElementById('cone-size-val').innerText = val;
+      saveRadarSettings();
     }
 
     function updateAirspaceOpacity(val) {
       AIRSPACE_OPACITY = parseInt(val) / 100; 
       document.getElementById('airspace-opacity-val').innerText = val;
+      saveRadarSettings();
     }
 
     function resetToNorth() {
