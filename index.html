@@ -300,8 +300,21 @@
       </div>
 
       <div class="panel-section" id="cone-size-section" style="display: none;">
-        <label>✈️ Aircraft Size: <span id="cone-size-val">12</span>px</label>
-        <input type="range" id="cone-size-slider" min="8" max="36" step="4" value="12" oninput="updateConeSize(this.value)">
+        <label>✈️ Aircraft Size Mode</label>
+        <div class="btn-group-2" style="margin-top: 6px; margin-bottom: 10px;">
+          <button id="size-mode-pixel" class="btn active" onclick="setAircraftSizeMode('pixel')">画面固定(px)</button>
+          <button id="size-mode-real" class="btn" onclick="setAircraftSizeMode('real')">実機サイズ(m)</button>
+        </div>
+
+        <div id="cone-size-pixel-section">
+          <label>Aircraft Size: <span id="cone-size-val">12</span>px</label>
+          <input type="range" id="cone-size-slider" min="8" max="36" step="4" value="12" oninput="updateConeSize(this.value)">
+        </div>
+
+        <div id="cone-size-real-section" style="display: none;">
+          <label>Aircraft Size: <span id="real-size-val">1200</span>m</label>
+          <input type="range" id="real-size-slider" min="800" max="3600" step="200" value="1200" oninput="updateAircraftRealSize(this.value)">
+        </div>
       </div>
     </div>
   </div>
@@ -337,6 +350,8 @@
     let YBW_ALTITUDE = 3940
     let EXAGGERATION_FACTOR = 4.0;
     let CONE_TARGET_PIXEL_LENGTH = 12; // 機体マーカーの画面上での目標の長さ(px)。スライダーで調整
+    let AIRCRAFT_SIZE_MODE = 'pixel'; // 'pixel' = 画面上で常に同じ大きさ / 'real' = 実機サイズ(遠近で見た目の大きさが変わる)
+    let AIRCRAFT_REAL_SIZE_M = 1200;  // 実機サイズモード時の全長(メートル)。スライダーで800〜3600m・200m刻みで調整
     let AIRSPACE_OPACITY = 0.15; 
   
     let airspaceVisibility = {
@@ -416,6 +431,8 @@
           airspaceVisibility: airspaceVisibility,
           runwayActive: Object.fromEntries(YYC_RUNWAYS.map(r => [r.id, r.active])),
           aircraftSize: CONE_TARGET_PIXEL_LENGTH,
+          aircraftSizeMode: AIRCRAFT_SIZE_MODE,
+          aircraftRealSize: AIRCRAFT_REAL_SIZE_M,
           viewMode: viewMode,
           camera: map ? {
             center: [map.getCenter().lng, map.getCenter().lat],
@@ -555,6 +572,8 @@
           });
         }
         if (typeof savedSettings.aircraftSize === 'number') CONE_TARGET_PIXEL_LENGTH = savedSettings.aircraftSize;
+        if (savedSettings.aircraftSizeMode) AIRCRAFT_SIZE_MODE = savedSettings.aircraftSizeMode;
+        if (typeof savedSettings.aircraftRealSize === 'number') AIRCRAFT_REAL_SIZE_M = savedSettings.aircraftRealSize;
         if (savedSettings.viewMode) viewMode = savedSettings.viewMode;
       }
 
@@ -612,6 +631,12 @@
           document.getElementById('airspace-opacity-val').innerText = Math.round(AIRSPACE_OPACITY * 100);
           document.getElementById('cone-size-slider').value = CONE_TARGET_PIXEL_LENGTH;
           document.getElementById('cone-size-val').innerText = CONE_TARGET_PIXEL_LENGTH;
+          document.getElementById('real-size-slider').value = AIRCRAFT_REAL_SIZE_M;
+          document.getElementById('real-size-val').innerText = AIRCRAFT_REAL_SIZE_M;
+          document.getElementById('size-mode-pixel').classList.toggle('active', AIRCRAFT_SIZE_MODE === 'pixel');
+          document.getElementById('size-mode-real').classList.toggle('active', AIRCRAFT_SIZE_MODE === 'real');
+          document.getElementById('cone-size-pixel-section').style.display = (AIRCRAFT_SIZE_MODE === 'pixel') ? 'block' : 'none';
+          document.getElementById('cone-size-real-section').style.display = (AIRCRAFT_SIZE_MODE === 'real') ? 'block' : 'none';
           ['cyber', 'backdrop', 'satellite'].forEach(name => {
             document.getElementById(`style-${name}`).classList.toggle('active', name === currentStyleName);
           });
@@ -2189,9 +2214,14 @@
         getOrientation: d => [-(d.pitch || 0), -(d.angle || 0) + CONE_HEADING_OFFSET_DEG, 0],
         getColor: d => getAircraftColor(d.rawAlt),
         material: false, // 陰影(ライティング)を無効化し、指定した色をそのまま平坦に表示する
-        // ズームによる画面上サイズの補正 × カメラ距離による補正 × 選択中の強調(1.6倍)
+        // 画面固定(px)モード: ズームによる画面上サイズ補正 × カメラ距離による補正
+        // 実機サイズ(m)モード: 実寸スケールのみ(補正なし。遠近で見た目の大きさが変わるのが正しい挙動)
+        // どちらも選択中の機体は1.6倍に強調
         getScale: d => {
-          const s = coneZoomScale * (aircraftScaleFactors[d.id] || 1) * (d.id === selectedAircraftId ? 1.6 : 1);
+          const base = (AIRCRAFT_SIZE_MODE === 'real')
+            ? (AIRCRAFT_REAL_SIZE_M / AIRCRAFT_LENGTH_M)
+            : (coneZoomScale * (aircraftScaleFactors[d.id] || 1));
+          const s = base * (d.id === selectedAircraftId ? 1.6 : 1);
           return [s, s, s];
         },
         sizeScale: 1,
@@ -2207,7 +2237,7 @@
           data: [viewMode, currentPositionsArray],
           getPosition: [currentPositionsArray], 
           getOrientation: [currentPositionsArray],
-          getScale: [selectedAircraftId, aircraftScaleFactors, coneZoomScale]
+          getScale: [selectedAircraftId, aircraftScaleFactors, coneZoomScale, AIRCRAFT_SIZE_MODE, AIRCRAFT_REAL_SIZE_M]
         }
       });
 
@@ -2349,6 +2379,21 @@
     function updateConeSize(val) {
       CONE_TARGET_PIXEL_LENGTH = parseInt(val);
       document.getElementById('cone-size-val').innerText = val;
+      saveRadarSettings();
+    }
+
+    function setAircraftSizeMode(mode) {
+      AIRCRAFT_SIZE_MODE = mode;
+      document.getElementById('size-mode-pixel').classList.toggle('active', mode === 'pixel');
+      document.getElementById('size-mode-real').classList.toggle('active', mode === 'real');
+      document.getElementById('cone-size-pixel-section').style.display = (mode === 'pixel') ? 'block' : 'none';
+      document.getElementById('cone-size-real-section').style.display = (mode === 'real') ? 'block' : 'none';
+      saveRadarSettings();
+    }
+
+    function updateAircraftRealSize(val) {
+      AIRCRAFT_REAL_SIZE_M = parseInt(val);
+      document.getElementById('real-size-val').innerText = val;
       saveRadarSettings();
     }
 
