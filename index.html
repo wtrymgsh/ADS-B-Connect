@@ -60,6 +60,68 @@
       border-radius: 4px; cursor: pointer; font-size: 11px; transition: 0.2s; text-align: center;
     }
     .btn.active { background: #0076ff; font-weight: bold; }
+
+    /* iOS風トグルスイッチ */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .toggle-label { font-size: 12px; margin: 0; }
+    .ios-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+    .ios-switch input { opacity: 0; width: 0; height: 0; }
+    .ios-switch-slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #555; transition: 0.2s; border-radius: 24px;
+    }
+    .ios-switch-slider:before {
+      position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background-color: #fff; transition: 0.2s; border-radius: 50%;
+    }
+    .ios-switch input:checked + .ios-switch-slider { background-color: #0076ff; }
+    .ios-switch input:checked + .ios-switch-slider:before { transform: translateX(18px); }
+
+    /* 高度フィルタ用の縦スライダー(地図脇に常時表示、ドラッグで自由に移動可能) */
+    #altitude-filter-panel {
+      position: absolute; bottom: 140px; right: 20px; z-index: 100;
+      background: rgba(20, 20, 20, 0.25); border-radius: 8px;
+      color: #fff; width: 70px; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      padding: 12px 0 10px 0; text-align: center;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    #altitude-filter-panel .alt-filter-title {
+      font-size: 10px; font-weight: bold; color: #0076ff; margin-bottom: 10px; letter-spacing: 0.5px;
+      cursor: grab; user-select: none; width: 100%; touch-action: none;
+    }
+    #altitude-filter-panel .alt-filter-title:active { cursor: grabbing; }
+    #altitude-filter-slider { height: 260px; margin: 8px 0; }
+    #altitude-filter-panel .noUi-target { background: #222; border: 1px solid #444; border-radius: 6px; width: 10px; }
+    #altitude-filter-panel .noUi-connect { background: linear-gradient(0deg, #0056b3, #0076ff); }
+    /* 位置は right/bottom で指定する: noUiSlider の縦向きデフォルトは
+       (width:28px; height:34px; right:-6px; bottom:-17px) のように right/bottom を使う設計になっており、
+       ここをtop/leftで上書きすると値の位置と見た目がズレる。track幅10px・20x20の正方形ハンドルを
+       中央に来るよう計算した値(right: -5px = (20-10)/2, bottom: -10px = 20/2)を使う。 */
+    #altitude-filter-panel .noUi-vertical .noUi-handle {
+      width: 20px !important; height: 20px !important;
+      right: -5px !important; bottom: -10px !important;
+    }
+    #altitude-filter-panel .noUi-handle {
+      background: #0076ff; border: 2px solid #fff; border-radius: 4px;
+      box-shadow: 0 0 8px rgba(0,118,255,1); cursor: pointer;
+    }
+    #altitude-filter-panel .noUi-handle:hover { background: #248aff; filter: brightness(1.15); }
+    #altitude-filter-panel .noUi-handle:before, #altitude-filter-panel .noUi-handle:after { display: none; }
+    #altitude-filter-panel .noUi-tooltip {
+      display: block; background: #0076ff; color: #fff; border: 1px solid #fff; border-radius: 4px;
+      padding: 3px 6px; font-size: 10px; font-weight: bold; font-family: monospace; white-space: nowrap;
+      /* ツマミの上に重ねて表示する(横に余白を取らないため)。ドラッグ操作を妨げないようクリック貫通にする */
+      left: 50% !important; top: 50% !important; right: auto !important; bottom: auto !important;
+      transform: translate(-50%, -50%) !important;
+      pointer-events: none;
+    }
+    #altitude-filter-panel .alt-unit-label { font-size: 9px; color: #888; margin-top: 2px; }
+    #altitude-filter-panel .alt-reset-btn {
+      margin-top: 10px; font-size: 10px; background: #333; color: #fff; border: 1px solid #555;
+      border-radius: 4px; padding: 4px 10px; cursor: pointer;
+    }
+    #altitude-filter-panel .alt-reset-btn:hover { background: #0076ff; }
+    @media (max-width: 600px) { #altitude-filter-panel { display: none; } }
     
     .rwy-btn { 
       width: 100%; 
@@ -82,7 +144,7 @@
     .control-btn {
       position: absolute; right: 20px; z-index: 100;
       background: rgba(20, 20, 20, 0.3); color: #0076ff; border: 1px solid #0076ff;
-      padding: 10px 15px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: bold;
+      padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: bold;
       box-shadow: 0 0 10px rgba(0, 118, 255, 0.3); transition: all 0.2s; width: 90px; text-align: center;
     }
     .control-btn:hover { background: #0076ff; color: #fff; box-shadow: 0 0 15px rgba(0, 118, 255, 0.3); }
@@ -214,8 +276,8 @@
     </div>
   </div>
     
-  <button id="compass-btn" class="control-btn" onclick="resetToNorth()">北を上に</button>
-  <button id="topview-btn" class="control-btn" onclick="setViewToTop()">真上から</button>
+  <button id="compass-btn" class="control-btn" onclick="resetToNorth()">North Up</button>
+  <button id="topview-btn" class="control-btn" onclick="setViewToTop()">Top-Down</button>
   <button id="yyc-btn" class="control-btn" onclick="toggleYycLock()">YYC</button>
 
   <div id="control-panel" class="collapsed">
@@ -300,10 +362,12 @@
       </div>
 
       <div class="panel-section" id="cone-size-section" style="display: none;">
+        
+
         <label>✈️ Aircraft Size Mode</label>
         <div class="btn-group-2" style="margin-top: 6px; margin-bottom: 10px;">
-          <button id="size-mode-pixel" class="btn active" onclick="setAircraftSizeMode('pixel')">画面固定(px)</button>
-          <button id="size-mode-real" class="btn" onclick="setAircraftSizeMode('real')">実機サイズ(m)</button>
+          <button id="size-mode-pixel" class="btn active" onclick="setAircraftSizeMode('pixel')">Fixed (px)</button>
+          <button id="size-mode-real" class="btn" onclick="setAircraftSizeMode('real')">Scaled (m)</button>
         </div>
 
         <div id="cone-size-pixel-section">
@@ -315,6 +379,15 @@
           <label>Aircraft Size: <span id="real-size-val">1200</span>m</label>
           <input type="range" id="real-size-slider" min="800" max="3600" step="200" value="1200" oninput="updateAircraftRealSize(this.value)">
         </div>
+
+        <div class="toggle-row" style="margin-top: 6px;">
+          <label class="toggle-label">🏷️ Show Callsigns</label>
+          <label class="ios-switch">
+            <input type="checkbox" id="callsign-toggle" checked onchange="setCallsignVisible(this.checked)">
+            <span class="ios-switch-slider"></span>
+          </label>
+        </div>
+
       </div>
     </div>
   </div>
@@ -334,6 +407,13 @@
         <span id="label-right-time">:NOW</span>
       </div>
     </div>
+  </div>
+
+  <div id="altitude-filter-panel">
+    <div class="alt-filter-title" id="altitude-filter-drag-handle">⠿ ALT FILTER</div>
+    <div id="altitude-filter-slider"></div>
+    <div class="alt-unit-label">ft</div>
+    <button class="alt-reset-btn" onclick="resetAltitudeFilter()">RESET</button>
   </div>
 
   <div id="map"></div>
@@ -408,6 +488,14 @@
 
     let viewMode = 'live'; 
     let currentArchiveData = []; 
+
+    // コールサイン表示(Liveモード限定)のトグル
+    let showCallsignLabels = true;
+
+    // 高度フィルタ(縦スライダー、ft単位)。live/current log/saved log全モードで軌跡・マーカーをこの範囲に絞る
+    const ALT_FILTER_MAX_FT = 50000;
+    let altFilterMinFt = 0;
+    let altFilterMaxFt = ALT_FILTER_MAX_FT;
     
     let liveFlightPaths = {};     
     let archiveFlightPaths = {};  
@@ -434,6 +522,10 @@
           aircraftSizeMode: AIRCRAFT_SIZE_MODE,
           aircraftRealSize: AIRCRAFT_REAL_SIZE_M,
           viewMode: viewMode,
+          showCallsignLabels: showCallsignLabels,
+          altFilterMinFt: altFilterMinFt,
+          altFilterMaxFt: altFilterMaxFt,
+          altPanelPos: altPanelPos,
           camera: map ? {
             center: [map.getCenter().lng, map.getCenter().lat],
             zoom: map.getZoom(),
@@ -511,6 +603,88 @@
         updateAbsoluteTimeLabels();
     });
 
+    // 高度フィルタスライダー(縦・地図脇に常時表示。Live/current log/saved log全モード共通)
+    const altitudeFilterSlider = document.getElementById('altitude-filter-slider');
+    noUiSlider.create(altitudeFilterSlider, {
+        start: [altFilterMinFt, altFilterMaxFt],
+        connect: true,
+        orientation: 'vertical',
+        direction: 'rtl', // 上=高高度・下=低高度になるよう反転(デフォルトのままだと上下が逆)
+        step: 500,
+        tooltips: [true, true],
+        range: { 'min': 0, 'max': ALT_FILTER_MAX_FT },
+        format: {
+            to: function (value) { return Math.round(value).toLocaleString(); },
+            from: function (value) { return Number(String(value).replace(/[^0-9.-]/g, '')); }
+        }
+    });
+    altitudeFilterSlider.noUiSlider.on('update', function (values, handle, unencoded) {
+        altFilterMinFt = parseFloat(unencoded[0]);
+        altFilterMaxFt = parseFloat(unencoded[1]);
+        saveRadarSettings();
+    });
+    function resetAltitudeFilter() {
+        altitudeFilterSlider.noUiSlider.set([0, ALT_FILTER_MAX_FT]);
+    }
+
+    // 高度フィルタパネルをドラッグで自由に移動できるようにする(位置は保存され次回も復元される)
+    let altPanelPos = null; // {left, top} (px)。null なら既定位置(CSSの bottom/right)のまま
+    function initAltitudeFilterDrag() {
+        const panel = document.getElementById('altitude-filter-panel');
+        const handle = document.getElementById('altitude-filter-drag-handle');
+        let dragging = false;
+        let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        function clampAndApply(left, top) {
+            const maxLeft = window.innerWidth - panel.offsetWidth - 4;
+            const maxTop = window.innerHeight - panel.offsetHeight - 4;
+            left = Math.max(4, Math.min(maxLeft, left));
+            top = Math.max(4, Math.min(maxTop, top));
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            altPanelPos = { left, top };
+            return { left, top };
+        }
+
+        function onPointerMove(e) {
+            if (!dragging) return;
+            clampAndApply(startLeft + (e.clientX - startX), startTop + (e.clientY - startY));
+        }
+        function onPointerUp() {
+            if (!dragging) return;
+            dragging = false;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+            saveRadarSettings();
+        }
+
+        // ドラッグ中の移動・終了はdocument側で追跡する(setPointerCaptureに頼らない方式。
+        // 環境によってはポインタキャプチャがうまく働かず、細いタイトル部分から
+        // 少しでもカーソルが外れると追跡が止まってしまうため、より確実なこちらに変更した)
+        handle.addEventListener('pointerdown', (e) => {
+            dragging = true;
+            const rect = panel.getBoundingClientRect();
+            startX = e.clientX; startY = e.clientY;
+            startLeft = rect.left; startTop = rect.top;
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('pointerup', onPointerUp);
+            e.preventDefault();
+        });
+
+        // 復元済みの位置があれば適用する
+        if (altPanelPos && typeof altPanelPos.left === 'number' && typeof altPanelPos.top === 'number') {
+            clampAndApply(altPanelPos.left, altPanelPos.top);
+        }
+    }
+
+    // コールサイン表示(Liveモード時のみ意味を持つ)のON/OFF
+    function setCallsignVisible(flag) {
+      showCallsignLabels = flag;
+      saveRadarSettings();
+    }
+
     let panelTimeout = null;
     const AUTO_COLLAPSE_DELAY = 2000;
     const HOVER_COLLAPSE_DELAY = 1000;
@@ -575,6 +749,10 @@
         if (savedSettings.aircraftSizeMode) AIRCRAFT_SIZE_MODE = savedSettings.aircraftSizeMode;
         if (typeof savedSettings.aircraftRealSize === 'number') AIRCRAFT_REAL_SIZE_M = savedSettings.aircraftRealSize;
         if (savedSettings.viewMode) viewMode = savedSettings.viewMode;
+        if (typeof savedSettings.showCallsignLabels === 'boolean') showCallsignLabels = savedSettings.showCallsignLabels;
+        if (typeof savedSettings.altFilterMinFt === 'number') altFilterMinFt = savedSettings.altFilterMinFt;
+        if (typeof savedSettings.altFilterMaxFt === 'number') altFilterMaxFt = savedSettings.altFilterMaxFt;
+        if (savedSettings.altPanelPos && typeof savedSettings.altPanelPos.left === 'number') altPanelPos = savedSettings.altPanelPos;
       }
 
       const initialCamera = (savedSettings && savedSettings.camera) ? savedSettings.camera : null;
@@ -637,6 +815,9 @@
           document.getElementById('size-mode-real').classList.toggle('active', AIRCRAFT_SIZE_MODE === 'real');
           document.getElementById('cone-size-pixel-section').style.display = (AIRCRAFT_SIZE_MODE === 'pixel') ? 'block' : 'none';
           document.getElementById('cone-size-real-section').style.display = (AIRCRAFT_SIZE_MODE === 'real') ? 'block' : 'none';
+          document.getElementById('callsign-toggle').checked = showCallsignLabels;
+          altitudeFilterSlider.noUiSlider.set([altFilterMinFt, altFilterMaxFt]);
+          initAltitudeFilterDrag();
           ['cyber', 'backdrop', 'satellite'].forEach(name => {
             document.getElementById(`style-${name}`).classList.toggle('active', name === currentStyleName);
           });
@@ -815,6 +996,24 @@
     // 保存済みポイントのrawAltを安全に取得する（欠損・NaNの古いデータが混じっていても軌跡描画がNaNで壊れないようにする）
     function safeAlt(pt) {
       return (pt.rawAlt !== undefined && !isNaN(pt.rawAlt)) ? Number(pt.rawAlt) : 0;
+    }
+
+    // 高度フィルタ: 点列(points)を、高度が[minM, maxM]範囲内に収まる連続区間ごとに分割して返す。
+    // 軌跡が範囲を出入りするたびに区間が分かれるため、範囲内の部分だけが独立した線として描画される。
+    function splitPointsByAltitudeRange(points, minM, maxM) {
+      const runs = [];
+      let current = [];
+      for (const pt of points) {
+        const alt = safeAlt(pt);
+        if (alt >= minM && alt <= maxM) {
+          current.push(pt);
+        } else {
+          if (current.length > 0) runs.push(current);
+          current = [];
+        }
+      }
+      if (current.length > 0) runs.push(current);
+      return runs;
     }
 
     // 直近の位置履歴(points)から、3次元の進行方向（水平方向のヨーと、昇降によるピッチ）を計算する。
@@ -1844,6 +2043,10 @@
         }
       }
 
+      // 高度フィルタ(ft -> m変換はここで一度だけ行う)
+      const altFilterMinM = altFilterMinFt * FT_TO_M;
+      const altFilterMaxM = altFilterMaxFt * FT_TO_M;
+
       for (const id in flightPaths) {
         const aircraft = flightPaths[id];
 
@@ -1868,8 +2071,9 @@
           const lon = Number(lastPt.pos[0]);
           const lat = Number(lastPt.pos[1]);
           const rawAlt = (lastPt.rawAlt !== undefined && !isNaN(lastPt.rawAlt)) ? Number(lastPt.rawAlt) : 0;
+          const inAltRange = rawAlt >= altFilterMinM && rawAlt <= altFilterMaxM;
           
-          if (!isNaN(lon) && !isNaN(lat)) {
+          if (inAltRange && !isNaN(lon) && !isNaN(lat)) {
             const headingAngle = aircraft.track ? parseFloat(aircraft.track) : 0;
             const fallbackYaw = isNaN(headingAngle) ? 0 : headingAngle;
             const orientation = computeAircraftOrientation(lastSeg, fallbackYaw, EXAGGERATION_FACTOR);
@@ -1885,36 +2089,47 @@
           const latestSegment = aircraft.segments[aircraft.segments.length - 1];
           if (latestSegment) {
             const displayPoints = latestSegment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
-            if (displayPoints.length > 1) {
-              activePathsArray.push({
-                id: id,
-                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => safeAlt(pt)) 
-              });
-            }
+            const altRuns = splitPointsByAltitudeRange(displayPoints, altFilterMinM, altFilterMaxM);
+            altRuns.forEach(run => {
+              if (run.length > 1) {
+                activePathsArray.push({
+                  id: id,
+                  path: run.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
+                  rawAltitudes: run.map(pt => safeAlt(pt)) 
+                });
+              }
+            });
           }
         } 
         else {
           let hasValidPositionForMarker = false;
           let bestMarkerPt = null;
           let bestMarkerDisplayPoints = null;
+          let bestMarkerTime = -Infinity;
 
           aircraft.segments.forEach(segment => {
             const displayPoints = segment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
+            const altRuns = splitPointsByAltitudeRange(displayPoints, altFilterMinM, altFilterMaxM);
 
-            if (displayPoints.length > 1) {
-              activePathsArray.push({
-                id: id,
-                path: displayPoints.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
-                rawAltitudes: displayPoints.map(pt => safeAlt(pt)) 
-              });
-              
-              if (!hasValidPositionForMarker) {
-                bestMarkerPt = displayPoints[displayPoints.length - 1];
-                bestMarkerDisplayPoints = displayPoints;
-                hasValidPositionForMarker = true;
+            altRuns.forEach(run => {
+              if (run.length > 1) {
+                activePathsArray.push({
+                  id: id,
+                  path: run.map(pt => [pt.pos[0], pt.pos[1], safeAlt(pt) * EXAGGERATION_FACTOR]),
+                  rawAltitudes: run.map(pt => safeAlt(pt)) 
+                });
               }
-            }
+              // マーカーは、高度範囲内にある区間のうち最も新しい時刻の点を採用する
+              if (run.length > 0) {
+                const runLastPt = run[run.length - 1];
+                if (runLastPt.time > bestMarkerTime) {
+                  bestMarkerTime = runLastPt.time;
+                  bestMarkerPt = runLastPt;
+                  bestMarkerDisplayPoints = run;
+                  hasValidPositionForMarker = true;
+                }
+              }
+            });
           });
 
           if (hasValidPositionForMarker && bestMarkerPt) {
@@ -2247,7 +2462,7 @@
       // ==========================================
       const callsignTextLayer = new deck.TextLayer({
         id: 'aircraft-callsigns-layer',
-        data: (viewMode === 'live') ? currentPositionsArray : [],
+        data: (viewMode === 'live' && showCallsignLabels) ? currentPositionsArray : [],
         coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
         getPosition: d => d.pos,
         getText: d => {
@@ -2278,7 +2493,7 @@
         characterSet: 'auto',
         pickable: false,
         updateTriggers: {
-          data: [viewMode, currentPositionsArray],
+          data: [viewMode, currentPositionsArray, showCallsignLabels],
           getPosition: [currentPositionsArray, EXAGGERATION_FACTOR],
           getSize: [aircraftScaleFactors],
           getPixelOffset: [aircraftScaleFactors]
