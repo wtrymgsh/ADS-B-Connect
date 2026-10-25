@@ -364,6 +364,35 @@
       <div class="panel-section" id="cone-size-section" style="display: none;">
         
 
+        <div style="padding-bottom: 8px; margin-bottom: 10px; border-bottom: 1px solid rgba(128,128,128,0.35);">
+          <label>🎯 Trend Line: <span id="trend-val">2</span> min</label>
+          <input type="range" id="trend-slider" min="0" max="5" step="0.5" value="2" oninput="updateTrendMinutes(this.value)">
+
+          <label style="margin-top: 8px; display: block;">⏱️ Trail Interval: <span id="trail-int-val">10</span> s</label>
+          <input type="range" id="trail-int-slider" min="1" max="30" step="1" value="10" oninput="updateTrailInterval(this.value)">
+
+          <label style="margin-top: 8px; display: block;">🕘 Trail Length: <span id="trail-len-val">3</span> min</label>
+          <input type="range" id="trail-len-slider" min="0" max="5" step="0.5" value="3" oninput="updateTrailMinutes(this.value)">
+
+          <label style="margin-top: 8px; display: block;">⚪ Trail Dot Ratio: <span id="trail-ratio-val">0.40</span></label>
+          <input type="range" id="trail-ratio-slider" min="0.1" max="1" step="0.05" value="0.4" oninput="updateTrailDotRatio(this.value)">
+
+          <div class="toggle-row" style="margin-top: 6px;">
+            <label class="toggle-label">🌫️ Fade Older Dots</label>
+            <label class="ios-switch">
+              <input type="checkbox" id="trail-fade-toggle" onchange="setTrailFade(this.checked)">
+              <span class="ios-switch-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row" style="margin-top: 6px;">
+            <label class="toggle-label">📜 Show Full History</label>
+            <label class="ios-switch">
+              <input type="checkbox" id="full-history-toggle" onchange="setShowFullHistory(this.checked)">
+              <span class="ios-switch-slider"></span>
+            </label>
+          </div>
+        </div>
+
         <label>✈️ Aircraft Size Mode</label>
         <div class="btn-group-2" style="margin-top: 6px; margin-bottom: 10px;">
           <button id="size-mode-pixel" class="btn active" onclick="setAircraftSizeMode('pixel')">Fixed (px)</button>
@@ -506,7 +535,19 @@
     // ブラウザ内(この端末・このブラウザのみ)に保存され、次回開いた時に自動的に復元される。
     // ==========================================
     const SETTINGS_STORAGE_KEY = 'radar_setting';
-    let settingsRestoring = false; // 復元中の一時的な変更でsaveRadarSettingsが呼ばれるのを防ぐフラグ
+    let settingsRestoring = true; // 初期化・復元中はsaveRadarSettingsを無効化するフラグ(復元完了後にfalseへ)。初期値trueなのは、スライダー生成時の初回updateで既定値が保存済み設定を上書きしないため
+    // saveRadarSettings()から参照される変数は、スライダー生成(update発火)より前に宣言しておく必要がある
+    // (後ろで let 宣言すると TDZ で 'Cannot access ... before initialization' になる)
+    let altPanelPos = null; // {left, top} (px)。null なら既定位置(CSSの bottom/right)のまま
+    let map;
+
+    // ---- Liveモードの Trend Line / History Trail 設定 ----
+    let trendMinutes = 2;        // Trend Line: 何分先まで予測線を引くか(0=非表示)
+    let trailIntervalSec = 10;   // History Trail: ドットを打つ間隔(秒)
+    let trailMinutes = 3;        // History Trail: 何分前まで遡るか(0=ドットなし)
+    let trailDotRatio = 0.4;     // ドット直径 ÷ 機体サイズ(見た目を見て調整するための仮スライダー)
+    let trailFade = false;       // 古いドットほど薄くするか
+    let showFullHistory = false; // 全飛行履歴の線を全機体に表示するか(OFF時は選択機体のみ)
 
     function saveRadarSettings() {
       if (settingsRestoring) return;
@@ -526,6 +567,12 @@
           altFilterMinFt: altFilterMinFt,
           altFilterMaxFt: altFilterMaxFt,
           altPanelPos: altPanelPos,
+          trendMinutes: trendMinutes,
+          trailIntervalSec: trailIntervalSec,
+          trailMinutes: trailMinutes,
+          trailDotRatio: trailDotRatio,
+          trailFade: trailFade,
+          showFullHistory: showFullHistory,
           camera: map ? {
             center: [map.getCenter().lng, map.getCenter().lat],
             zoom: map.getZoom(),
@@ -628,7 +675,6 @@
     }
 
     // 高度フィルタパネルをドラッグで自由に移動できるようにする(位置は保存され次回も復元される)
-    let altPanelPos = null; // {left, top} (px)。null なら既定位置(CSSの bottom/right)のまま
     function initAltitudeFilterDrag() {
         const panel = document.getElementById('altitude-filter-panel');
         const handle = document.getElementById('altitude-filter-drag-handle');
@@ -685,6 +731,113 @@
       saveRadarSettings();
     }
 
+    // ---- Trend Line / History Trail のUIハンドラ ----
+    function syncTrendTrailUI() {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      const txt = (id, v) => { const el = document.getElementById(id); if (el) el.innerText = v; };
+      set('trend-slider', trendMinutes);            txt('trend-val', trendMinutes);
+      set('trail-int-slider', trailIntervalSec);    txt('trail-int-val', trailIntervalSec);
+      set('trail-len-slider', trailMinutes);        txt('trail-len-val', trailMinutes);
+      set('trail-ratio-slider', trailDotRatio);     txt('trail-ratio-val', trailDotRatio.toFixed(2));
+      const f = document.getElementById('trail-fade-toggle'); if (f) f.checked = trailFade;
+      const h = document.getElementById('full-history-toggle'); if (h) h.checked = showFullHistory;
+    }
+    function updateTrendMinutes(v) { trendMinutes = parseFloat(v); syncTrendTrailUI(); saveRadarSettings(); }
+    function updateTrailInterval(v) { trailIntervalSec = parseInt(v); syncTrendTrailUI(); saveRadarSettings(); }
+    function updateTrailMinutes(v) { trailMinutes = parseFloat(v); syncTrendTrailUI(); saveRadarSettings(); }
+    function updateTrailDotRatio(v) { trailDotRatio = parseFloat(v); syncTrendTrailUI(); saveRadarSettings(); }
+    function setTrailFade(flag) { trailFade = flag; saveRadarSettings(); }
+    function setShowFullHistory(flag) { showFullHistory = flag; saveRadarSettings(); }
+
+    // ---- Trend Line / History Trail の計算 ----
+    const TREND_VELOCITY_WINDOW_MS = 15000; // 速度ベクトル推定に使う過去の窓(長いほど安定、短いほど旋回に追従)
+    const TREND_MIN_GROUND_SPEED_MS = 40 * 0.514444; // これ未満(約40kt)は地上走行とみなし予測線を出さない
+    const TRAIL_MAX_GAP_MS = 60000; // 受信間隔がこれより空いている区間はドットを補間しない
+
+    function getLastSegment(aircraft) {
+      for (let i = aircraft.segments.length - 1; i >= 0; i--) {
+        const seg = aircraft.segments[i];
+        if (seg && seg.length > 0) return seg;
+      }
+      return null;
+    }
+
+    // 直近の位置履歴から速度ベクトル(東,北,上: m/s)を推定。取れなければADS-B報告値(speed/track/v_rate)にフォールバック。
+    function estimateVelocity(aircraft, seg) {
+      const last = seg[seg.length - 1];
+      let ref = null, dtMs = 0;
+      for (let i = seg.length - 2; i >= 0; i--) {
+        const d = last.time - seg[i].time;
+        if (d > 60000) break;
+        ref = seg[i]; dtMs = d;
+        if (d >= TREND_VELOCITY_WINDOW_MS) break;
+      }
+      let vx, vy, vz;
+      if (ref && dtMs >= 1000) {
+        const dt = dtMs / 1000;
+        const latRad = ((Number(last.pos[1]) + Number(ref.pos[1])) / 2) * Math.PI / 180;
+        vx = (Number(last.pos[0]) - Number(ref.pos[0])) * 111320 * Math.cos(latRad) / dt;
+        vy = (Number(last.pos[1]) - Number(ref.pos[1])) * 110540 / dt;
+        vz = (safeAlt(last) - safeAlt(ref)) / dt;
+      } else {
+        const spd = parseFloat(aircraft.speed) * 0.514444;
+        const trk = parseFloat(aircraft.track) * Math.PI / 180;
+        if (isNaN(spd) || isNaN(trk)) return null;
+        const vr = parseFloat(aircraft.v_rate);
+        vx = spd * Math.sin(trk); vy = spd * Math.cos(trk);
+        vz = isNaN(vr) ? 0 : vr * 0.00508;
+      }
+      const hs = Math.hypot(vx, vy);
+      if (isNaN(hs) || isNaN(vz) || hs < TREND_MIN_GROUND_SPEED_MS || hs > 400) return null;
+      return { vx, vy, vz };
+    }
+
+    // 現在位置から、等速直進(上昇・降下含む)でtrendMinutes分後の位置までの線分データを作る
+    function buildTrendLine(d, aircraft, seg, minutes, exag) {
+      const v = estimateVelocity(aircraft, seg);
+      if (!v) return null;
+      const T = minutes * 60;
+      const lon0 = d.pos[0], lat0 = d.pos[1];
+      const alt0 = d.rawAlt;
+      const lat1 = lat0 + (v.vy * T) / 110540;
+      const lon1 = lon0 + (v.vx * T) / (111320 * Math.cos(lat0 * Math.PI / 180));
+      const alt1 = Math.max(0, alt0 + v.vz * T);
+      return {
+        id: d.id,
+        path: [[lon0, lat0, alt0 * exag], [lon1, lat1, alt1 * exag]],
+        rawAltitudes: [alt0, alt1]
+      };
+    }
+
+    // Y秒ごとの「固定の時刻グリッド」上の位置を、Z分前まで遡って補間しドットデータとして out に追加する。
+    // 時刻グリッドを固定(epoch基準)にすることで、ドットが地図上で動かず、機体が進むにつれて後ろに残る。
+    function appendTrailDots(seg, nowMs, intervalSec, minutes, altMinM, altMaxM, exag, out) {
+      const stepMs = intervalSec * 1000;
+      const spanMs = minutes * 60000;
+      const lastTime = seg[seg.length - 1].time;
+      let i = seg.length - 1;
+      for (let t = Math.floor(nowMs / stepMs) * stepMs; t >= nowMs - spanMs; t -= stepMs) {
+        if (nowMs - t < 2000) continue;   // 機体本体と重なる直近のドットは省く
+        if (t > lastTime) continue;
+        while (i > 0 && seg[i - 1].time >= t) i--;
+        let lon, lat, alt;
+        if (i === 0) {
+          if (seg[0].time > t) break;      // これより古いデータは無い
+          lon = Number(seg[0].pos[0]); lat = Number(seg[0].pos[1]); alt = safeAlt(seg[0]);
+        } else {
+          const a = seg[i - 1], b = seg[i];
+          const gap = b.time - a.time;
+          if (gap > TRAIL_MAX_GAP_MS) continue;
+          const f = gap > 0 ? (t - a.time) / gap : 0;
+          lon = Number(a.pos[0]) + (Number(b.pos[0]) - Number(a.pos[0])) * f;
+          lat = Number(a.pos[1]) + (Number(b.pos[1]) - Number(a.pos[1])) * f;
+          alt = safeAlt(a) + (safeAlt(b) - safeAlt(a)) * f;
+        }
+        if (isNaN(lon) || isNaN(lat) || alt < altMinM || alt > altMaxM) continue;
+        out.push({ pos: [lon, lat, alt * exag], rawAlt: alt, age: nowMs - t });
+      }
+    }
+
     let panelTimeout = null;
     const AUTO_COLLAPSE_DELAY = 2000;
     const HOVER_COLLAPSE_DELAY = 1000;
@@ -715,8 +868,6 @@
         resetPanelTimer(HOVER_COLLAPSE_DELAY);
       });
     }
-
-    let map; 
 
     const deckOverlay = new deck.MapboxOverlay({ 
       interleaved: true,
@@ -753,6 +904,12 @@
         if (typeof savedSettings.altFilterMinFt === 'number') altFilterMinFt = savedSettings.altFilterMinFt;
         if (typeof savedSettings.altFilterMaxFt === 'number') altFilterMaxFt = savedSettings.altFilterMaxFt;
         if (savedSettings.altPanelPos && typeof savedSettings.altPanelPos.left === 'number') altPanelPos = savedSettings.altPanelPos;
+        if (typeof savedSettings.trendMinutes === 'number') trendMinutes = savedSettings.trendMinutes;
+        if (typeof savedSettings.trailIntervalSec === 'number') trailIntervalSec = savedSettings.trailIntervalSec;
+        if (typeof savedSettings.trailMinutes === 'number') trailMinutes = savedSettings.trailMinutes;
+        if (typeof savedSettings.trailDotRatio === 'number') trailDotRatio = savedSettings.trailDotRatio;
+        if (typeof savedSettings.trailFade === 'boolean') trailFade = savedSettings.trailFade;
+        if (typeof savedSettings.showFullHistory === 'boolean') showFullHistory = savedSettings.showFullHistory;
       }
 
       const initialCamera = (savedSettings && savedSettings.camera) ? savedSettings.camera : null;
@@ -764,7 +921,25 @@
           zoom: initialCamera ? initialCamera.zoom : 8,
           bearing: initialCamera ? initialCamera.bearing : 0,
           pitch: initialCamera ? initialCamera.pitch : 0,
-          maxPitch: 85
+          maxPitch: 85,
+          antialias: true // MSAAを有効化。細い線(航跡・Trend Line)の階段状のギザギザを滑らかにする
+      });
+
+      // WebGLコンテキストが失われた場合(Safariのバックグラウンド化・GPUメモリ逼迫など)の自動復旧。
+      // interleaved描画のdeck.glはコンテキスト復元後に自力で復帰できないため、ページを再読み込みする。
+      // 無限リロードを避けるため、60秒以内の再発時は再読み込みしない。
+      const glCanvas = map.getCanvas();
+      glCanvas.addEventListener('webglcontextlost', (ev) => {
+        ev.preventDefault();
+        console.warn('⚠️ WebGL context lost');
+      });
+      glCanvas.addEventListener('webglcontextrestored', () => {
+        console.warn('♻️ WebGL context restored');
+        const last = Number(sessionStorage.getItem('radar_gl_reload') || 0);
+        if (Date.now() - last > 60000) {
+          sessionStorage.setItem('radar_gl_reload', String(Date.now()));
+          location.reload();
+        }
       });
 
       const panel = document.getElementById('control-panel');
@@ -817,6 +992,7 @@
           document.getElementById('cone-size-real-section').style.display = (AIRCRAFT_SIZE_MODE === 'real') ? 'block' : 'none';
           document.getElementById('callsign-toggle').checked = showCallsignLabels;
           altitudeFilterSlider.noUiSlider.set([altFilterMinFt, altFilterMaxFt]);
+          syncTrendTrailUI();
           initAltitudeFilterDrag();
           ['cyber', 'backdrop', 'satellite'].forEach(name => {
             document.getElementById(`style-${name}`).classList.toggle('active', name === currentStyleName);
@@ -1231,6 +1407,23 @@
     // 小さすぎて見えない/大きすぎる場合はこの値を調整する。
     const AIRCRAFT_LENGTH_M = 1200; // 全長1200m
     const AIRCRAFT_MESH = createAircraftMesh(AIRCRAFT_LENGTH_M);
+
+    // ---- 毎秒の再描画で静的データを作り直さないためのキャッシュ ----
+    // (TCA等の形状データを毎秒新規生成すると、deck.glが毎回ジオメトリを再計算・GPUへ再転送し、
+    //  GPUメモリ圧迫 → WebGLコンテキスト消失の原因になる)
+    const _staticCache = {};
+    function cachedStatic(key, factory) {
+      if (!(key in _staticCache)) _staticCache[key] = factory();
+      return _staticCache[key];
+    }
+    // 線の最小太さ(px)。1px未満だとラスタライズでピクセルが抜け、点線のように見えるため下限を設ける
+    const MIN_LINE_WIDTH_PX = 0.8;
+    // 線の色は不透明にする(半透明だと、1秒ごとの頂点の重なり部分だけ濃くなり数珠状に見えるため)
+    const opaqueColor = (c) => [c[0], c[1], c[2], 255];
+    const PATH_STYLE_EXTENSION = new deck.PathStyleExtension({ highPrecisionDash: true });
+    const RUNWAY_BOX_DATA = [{}];
+    let _lastPathSig = '';
+    let _lastPathsArray = [];
 
     // 進行方向(コンパス角度: 北=0°、時計回り)とメッシュのyaw回転方向を合わせるためのオフセット。
     // メッシュの先端は+X(東)方向がデフォルトの向きなので、北(+Y)を基準にするため90度補正している。
@@ -2088,7 +2281,10 @@
 
           const latestSegment = aircraft.segments[aircraft.segments.length - 1];
           if (latestSegment) {
-            const displayPoints = latestSegment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd);
+            // 全飛行履歴: ON なら全機体、OFF なら選択中の機体のみ
+            const displayPoints = (showFullHistory || id === selectedAircraftId)
+              ? latestSegment.filter(pt => pt.time >= timeLimitStart && pt.time <= timeLimitEnd)
+              : [];
             const altRuns = splitPointsByAltitudeRange(displayPoints, altFilterMinM, altFilterMaxM);
             altRuns.forEach(run => {
               if (run.length > 1) {
@@ -2152,6 +2348,40 @@
         }
       }
 
+      // Trend Line(予測線) と History Trail(履歴ドット): Liveモードのみ
+      const trendArray = [];
+      const trailArray = [];
+      if (viewMode === 'live' && (trendMinutes > 0 || trailMinutes > 0)) {
+        const nowMs = Date.now();
+        for (const d of currentPositionsArray) {
+          const aircraft = flightPaths[d.id];
+          const seg = aircraft ? getLastSegment(aircraft) : null;
+          if (!seg) continue;
+          if (trendMinutes > 0) {
+            const line = buildTrendLine(d, aircraft, seg, trendMinutes, EXAGGERATION_FACTOR);
+            if (line) trendArray.push(line);
+          }
+          if (trailMinutes > 0) {
+            appendTrailDots(seg, nowMs, trailIntervalSec, trailMinutes, altFilterMinM, altFilterMaxM, EXAGGERATION_FACTOR, trailArray);
+          }
+        }
+      }
+
+      // 軌跡データに変化がなければ前回と同じ配列(同一参照)を使い、deck.glのPathLayer再構築・GPU再転送を避ける
+      {
+        let sig = viewMode + '|' + showFullHistory + '|' + selectedAircraftId + '|' + altFilterMinFt + '|' + altFilterMaxFt + '|' + EXAGGERATION_FACTOR + '|' + activePathsArray.length;
+        for (const p of activePathsArray) {
+          const last = p.path[p.path.length - 1];
+          sig += ';' + p.id + ',' + p.path.length + ',' + last[0] + ',' + last[1] + ',' + p.path[0][0];
+        }
+        if (sig === _lastPathSig) {
+          activePathsArray = _lastPathsArray;
+        } else {
+          _lastPathSig = sig;
+          _lastPathsArray = activePathsArray;
+        }
+      }
+
       // 5つのゾーンのおすすめカラーセット（定数定義）
       const AIRSPACE_COLORS = {
         CYBW_CZ: [0, 170, 255],     
@@ -2166,11 +2396,11 @@
       // 一般空域レイヤー（CYYC_CZ および CYBW_CZ の制御）
       const airspaceLayer = new deck.PolygonLayer({
         id: 'yyc-airspace-layer',
-        data: airspaceData.filter(d => {
+        data: cachedStatic('airspace:' + airspaceVisibility["CYBW_CZ"] + airspaceVisibility["CYYC_CZ"], () => airspaceData.filter(d => {
           if (d.type === "CYBW_CZ" && !airspaceVisibility["CYBW_CZ"]) return false;
           if (d.type === "CYYC_CZ" && !airspaceVisibility["CYYC_CZ"]) return false;
           return true;
-        }), 
+        })), 
         
         getPolygon: d => {
             const zOffset = d.rawElevation * EXAGGERATION_FACTOR;
@@ -2217,7 +2447,7 @@
       // 1. TCA_INNER レイヤーの作成
       // ==========================================
       const tcaColor = AIRSPACE_COLORS["TCA_INNER"];
-      const tca3DData = generateAccurateTCAInner(CYYC_CENTER);
+      const tca3DData = cachedStatic('tcaInner', () => generateAccurateTCAInner(CYYC_CENTER));
       const isInnerVisible = airspaceVisibility ? airspaceVisibility["TCA_INNER"] : true;
       const alpha = isInnerVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
 
@@ -2282,7 +2512,7 @@
       // ==========================================
       // 【修正】定数 AIRSPACE_COLORS から取得するように変更
       const tcaMiddleColor = AIRSPACE_COLORS["TCA_MIDDLE"]; 
-      const tcaMiddle3DData = generateAccurateTCAMiddle(CYYC_CENTER);
+      const tcaMiddle3DData = cachedStatic('tcaMiddle', () => generateAccurateTCAMiddle(CYYC_CENTER));
       const isMiddleVisible = airspaceVisibility ? airspaceVisibility["TCA_MIDDLE"] : true;
       const middleAlpha = isMiddleVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
 
@@ -2344,7 +2574,7 @@
       // ==========================================
       // 【修正】定数 AIRSPACE_COLORS から取得するように変更
       const tcaOuterColor = AIRSPACE_COLORS["TCA_OUTER"]; 
-      const tcaOuter3DData = generateAccurateTCAOuter(CYYC_CENTER);
+      const tcaOuter3DData = cachedStatic('tcaOuter', () => generateAccurateTCAOuter(CYYC_CENTER));
       const isOuterVisible = airspaceVisibility ? airspaceVisibility["TCA_OUTER"] : true;
       const outerAlpha = isOuterVisible ? Math.round(AIRSPACE_OPACITY * 255) : 0;
 
@@ -2504,10 +2734,10 @@
         id: 'flight-paths-layer',
         data: activePathsArray,
         getPath: d => d.path,
-        getColor: d => d.rawAltitudes.map(rawAlt => getColorByAltitude(rawAlt)),
+        getColor: d => d.rawAltitudes.map(rawAlt => opaqueColor(getColorByAltitude(rawAlt))),
         widthUnits: 'pixels',     
         getWidth: d => d.id === selectedAircraftId ? ((currentLineWidth - 0.3) * 2) : ((currentLineWidth - 0.3) * 1.0),      
-        widthMinPixels: 0.5,
+        widthMinPixels: MIN_LINE_WIDTH_PX,
         jointRounded: true,
         capRounded: true,
         pickable: true,
@@ -2519,7 +2749,7 @@
             updateDetailPanel(info.object.id);   
           }
         },
-        extensions: [new deck.PathStyleExtension({ highPrecisionDash: true })],
+        extensions: [PATH_STYLE_EXTENSION],
         getDashArray: [0, 0], 
         billboard: true,      
         miterLimit: 2,
@@ -2527,6 +2757,56 @@
           getPath: [activePathsArray],
           getColor: [activePathsArray], 
           getWidth: [selectedAircraftId, currentLineWidth]
+        }
+      });
+
+      // Trend Line: 現在位置から予測位置への線(高度連動の色・実線)
+      const trendLayer = new deck.PathLayer({
+        id: 'trend-line-layer',
+        data: trendArray,
+        getPath: d => d.path,
+        getColor: d => d.rawAltitudes.map(a => opaqueColor(getColorByAltitude(a))),
+        widthUnits: 'pixels',
+        getWidth: Math.max(0.5, currentLineWidth - 0.3),
+        widthMinPixels: MIN_LINE_WIDTH_PX,
+        capRounded: true,
+        billboard: true,   // 常にカメラへ面を向けたリボンにする(未指定だと地面に平らなリボンになり、傾けると細く潰れる)
+        pickable: false,
+        parameters: { depthTest: true, depthMask: true },
+        updateTriggers: {
+          getPath: [trendArray],
+          getColor: [trendArray],
+          getWidth: [currentLineWidth]
+        }
+      });
+
+      // History Trail: 常にカメラを向く円盤(billboard)。大きさはAircraft sizeに trailDotRatio を掛けた直径
+      const trailRadius = (AIRCRAFT_SIZE_MODE === 'real')
+        ? (AIRCRAFT_REAL_SIZE_M * trailDotRatio / 2)
+        : (CONE_TARGET_PIXEL_LENGTH * trailDotRatio / 2);
+      const trailSpanMs = Math.max(1, trailMinutes * 60000);
+      const trailLayer = new deck.ScatterplotLayer({
+        id: 'history-trail-layer',
+        data: trailArray,
+        coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
+        getPosition: d => d.pos,
+        getFillColor: d => {
+          const c = getColorByAltitude(d.rawAlt);
+          const alpha = trailFade ? Math.round(c[3] * Math.max(0.12, 1 - 0.88 * d.age / trailSpanMs)) : c[3];
+          return [c[0], c[1], c[2], alpha];
+        },
+        getRadius: trailRadius,
+        radiusUnits: (AIRCRAFT_SIZE_MODE === 'real') ? 'meters' : 'pixels',
+        radiusMinPixels: 1,
+        billboard: true,
+        stroked: false,
+        filled: true,
+        pickable: false,
+        parameters: { depthTest: true, depthMask: false },
+        updateTriggers: {
+          getPosition: [trailArray],
+          getFillColor: [trailArray, trailFade, trailSpanMs],
+          getRadius: [trailRadius]
         }
       });
 
@@ -2539,11 +2819,14 @@
       const APPROACH_THICKNESS_METERS = 150 * FT_TO_M;  // 厚み
 
       const runwayBoxLayers = activeRunwaysData.map(rwy => {
-        const [start, end] = generateApproachLine(rwy, EXAGGERATION_FACTOR);
-        const boxMesh = createApproachBoxMesh(start, end, APPROACH_WIDTH_METERS, APPROACH_THICKNESS_METERS * EXAGGERATION_FACTOR);
+        const rwyGeo = cachedStatic(`rwy:${rwy.id}:${EXAGGERATION_FACTOR}`, () => {
+          const [s0, e0] = generateApproachLine(rwy, EXAGGERATION_FACTOR);
+          return { start: s0, end: e0, mesh: createApproachBoxMesh(s0, e0, APPROACH_WIDTH_METERS, APPROACH_THICKNESS_METERS * EXAGGERATION_FACTOR) };
+        });
+        const start = rwyGeo.start, end = rwyGeo.end, boxMesh = rwyGeo.mesh;
         return new deck.SimpleMeshLayer({
           id: `yyc-runway-approach-box-${rwy.id}`,
-          data: [{}],
+          data: RUNWAY_BOX_DATA,
           coordinateSystem: deck.COORDINATE_SYSTEM.LNGLAT,
           mesh: boxMesh,
           getPosition: () => start,
@@ -2554,9 +2837,11 @@
       });
 
       const currentLayers = [
-        pathLayer, 
-        markerLayer, 
         callsignTextLayer,
+        pathLayer, 
+        trailLayer,
+        trendLayer,
+        markerLayer, 
         runwayBoxLayers,
         airspaceLayer,
         tcaHorizontalLayer, 
